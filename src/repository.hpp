@@ -1,0 +1,44 @@
+#pragma once
+
+#include <optional>
+
+#include "directory.hpp"
+
+namespace fileshare
+{
+	class RepositoryConfig
+	{
+	public:
+		RepositoryConfig(const std::filesystem::path& config_file_path = ".fileshare");
+		~RepositoryConfig();
+
+		static std::optional<std::filesystem::path> search_config_file(const std::filesystem::path& path);
+		static std::filesystem::path search_config_file_or_error(const std::filesystem::path& path);
+
+		void load_config();
+		void save_config() const;
+
+		[[nodiscard]] const Directory& get_root() const { return root; }
+
+		void upload_item(const std::filesystem::path& file);
+
+		[[nodiscard]] std::string get_full_url() const;
+		[[nodiscard]] const std::string& get_domain() const { return remote_domain; }
+		[[nodiscard]] const std::string& get_repository() const { return remote_repository; }
+		[[nodiscard]] const std::string& get_directory() const { return remote_directory; }
+
+		void set_full_url(const std::string& new_url);
+		
+		[[nodiscard]] Directory fetch_repos_status();
+
+		void require_connection();
+
+	private:
+		Directory root;
+		std::filesystem::path config_path;
+		std::string remote_domain;
+		std::string remote_repository;
+		std::string remote_directory;
+		std::string auth_token;
+	};
+}

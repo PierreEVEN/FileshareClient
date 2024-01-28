@@ -11,7 +11,7 @@ find_package(nlohmann_json CONFIG REQUIRED)
 
 file(GLOB_RECURSE SOURCES src/*.cpp src/*.hpp)
 
-add_executable(FileshareClient ${SOURCES})
-target_include_directories(FileshareClient PRIVATE src/)
-target_link_libraries(FileshareClient PRIVATE unofficial::curlpp::curlpp)
-target_link_libraries(FileshareClient PRIVATE nlohmann_json::nlohmann_json)
+add_executable(fileshare ${SOURCES})
+target_include_directories(fileshare PRIVATE src/)
+target_link_libraries(fileshare PRIVATE unofficial::curlpp::curlpp)
+target_link_libraries(fileshare PRIVATE nlohmann_json::nlohmann_json)
