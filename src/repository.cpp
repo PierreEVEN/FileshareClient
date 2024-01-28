@@ -146,6 +146,7 @@ namespace fileshare
 		nlohmann::json json;
 		try
 		{
+			std::cout << repos_status.str() << std::endl;
 			json = nlohmann::json::parse(repos_status.str());
 		}
 		catch (const std::exception& e)

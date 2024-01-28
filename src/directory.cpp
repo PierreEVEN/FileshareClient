@@ -12,14 +12,17 @@ namespace fileshare
 	}
 
 	Directory::Directory(const nlohmann::json& json) :
-		path(json["path"].get<std::filesystem::path>()),
 		content_size(0),
 		num_files(0)
 	{
+		if (!json.contains("path"))
+			throw std::runtime_error("Missing directory path in retrieved data");
+		path = json["path"].get<std::filesystem::path>();
+
 		if (json.contains("files"))
 			for (const auto& entry : json["files"])
 			{
-				const auto file = File{ entry };
+				const auto file = File{entry};
 				content_size += file.get_file_size();
 				num_files += 1;
 				files.emplace_back(file);
@@ -28,7 +31,7 @@ namespace fileshare
 		if (json.contains("directories"))
 			for (const auto& entry : json["directories"])
 			{
-				const auto directory = Directory{ entry };
+				const auto directory = Directory{entry};
 				content_size += directory.content_size;
 				num_files += directory.num_files;
 				directories.emplace_back(directory);
@@ -42,14 +45,14 @@ namespace fileshare
 		{
 			if (entry.is_regular_file())
 			{
-				const auto file = File{ entry };
+				const auto file = File{entry};
 				content_size += file.get_file_size();
 				num_files += 1;
 				files.emplace_back(file);
 			}
 			else if (entry.is_directory())
 			{
-				const auto dir = Directory{ entry.path() };
+				const auto dir = Directory{entry.path()};
 				content_size += dir.content_size;
 				num_files += dir.num_files;
 				directories.emplace_back(dir);
@@ -63,10 +66,10 @@ namespace fileshare
 		std::vector<nlohmann::json> files_json;
 		std::vector<nlohmann::json> directory_json;
 
-		
+
 		for (const auto& file : files)
 			files_json.emplace_back(file.serialize());
-		
+
 		for (const auto& directory : directories)
 			directory_json.emplace_back(directory.serialize());
 
@@ -87,19 +90,19 @@ namespace fileshare
 			if (const auto o = other.find_file(l.get_path()))
 			{
 				if (o->get_last_write_time() > l.get_last_write_time())
-					diff.emplace_back(Diff{ l.get_path(), Diff::Operation::LocalIsOlder });
+					diff.emplace_back(Diff{l.get_path(), Diff::Operation::LocalIsOlder});
 				else if (l.get_last_write_time() > o->get_last_write_time())
-					diff.emplace_back(Diff{ l.get_path(), Diff::Operation::LocalIsNewer });
+					diff.emplace_back(Diff{l.get_path(), Diff::Operation::LocalIsNewer});
 			}
 			else
 			{
-				diff.emplace_back(Diff{ l.get_path(), Diff::Operation::RemoteDoesNotExists });
+				diff.emplace_back(Diff{l.get_path(), Diff::Operation::RemoteDoesNotExists});
 			}
 		}
 
 		for (const auto& o : other.files)
 			if (!find_file(o.get_path()))
-				diff.emplace_back(Diff{ o.get_path(), Diff::Operation::LocalDoesNotExists });
+				diff.emplace_back(Diff{o.get_path(), Diff::Operation::LocalDoesNotExists});
 
 
 		// Search directory diffs
@@ -113,16 +116,17 @@ namespace fileshare
 			else
 			{
 				for (const auto& diff_files : l.get_files_recursive())
-					diff.emplace_back(Diff{ diff_files.get_path(), Diff::Operation::RemoteDoesNotExists });
-				diff.emplace_back(Diff{ l.path, Diff::Operation::RemoteDoesNotExists });
+					diff.emplace_back(Diff{diff_files.get_path(), Diff::Operation::RemoteDoesNotExists});
+				diff.emplace_back(Diff{l.path, Diff::Operation::RemoteDoesNotExists});
 			}
 		}
 
 		for (const auto& o : other.directories)
-			if (!find_directory(o.path)) {
+			if (!find_directory(o.path))
+			{
 				for (const auto& diff_files : o.get_files_recursive())
-					diff.emplace_back(Diff{ diff_files.get_path(), Diff::Operation::LocalDoesNotExists });
-				diff.emplace_back(Diff{ o.path, Diff::Operation::LocalDoesNotExists });
+					diff.emplace_back(Diff{diff_files.get_path(), Diff::Operation::LocalDoesNotExists});
+				diff.emplace_back(Diff{o.path, Diff::Operation::LocalDoesNotExists});
 			}
 
 
