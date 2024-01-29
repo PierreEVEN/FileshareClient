@@ -21,7 +21,21 @@ void load_options(int argc, char** argv)
 
 				const auto root_dir = fileshare::Directory(cfg_file.parent_path(), nullptr);
 
-				const auto diffs = root_dir.diff(cfg.fetch_repos_status());
+				fileshare::Directory repos_status;
+				try {
+					repos_status = cfg.fetch_repos_status();
+				}
+				catch (const fileshare::AccessDeniedException&)
+				{
+					if (!cfg.is_connected()) {
+						cfg.require_connection();
+						repos_status = cfg.fetch_repos_status();
+					}
+					else
+						throw;
+				}
+
+				const auto diffs = root_dir.diff(repos_status);
 				for (const auto& diff : diffs)
 				{
 					switch (diff.get_operation())

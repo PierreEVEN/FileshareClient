@@ -6,6 +6,13 @@
 
 namespace fileshare
 {
+	class AccessDeniedException : public std::exception {
+	public:
+		const char* what() const override {
+			return "Access denied !";
+		}
+	};
+
 	class RepositoryConfig
 	{
 	public:
@@ -30,6 +37,13 @@ namespace fileshare
 		[[nodiscard]] Directory fetch_repos_status();
 
 		void require_connection();
+
+		[[nodiscard]] uint64_t get_server_time() const;
+
+		[[nodiscard]] bool is_sync() const;
+		void require_sync() const;
+
+		[[nodiscard]] bool is_connected() const;
 
 	private:
 		std::filesystem::path config_path;

@@ -1,2 +1,3 @@
-build
+build/
 **.fileshare
+test_dev_repo/

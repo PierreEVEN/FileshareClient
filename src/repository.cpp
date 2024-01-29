@@ -118,12 +118,16 @@ namespace fileshare
 
 	Directory RepositoryConfig::fetch_repos_status()
 	{
-		require_connection();
+		require_sync();
 
 		std::ostringstream repos_status;
 		const curlpp::options::WriteStream ws(&repos_status);
 
 		cURLpp::Easy req;
+		std::vector<std::string> headers = { "no-redirect:true"};
+		if (is_connected())
+			headers.push_back("auth-token:" + auth_token);
+		req.setOpt(new curlpp::options::HttpHeader());
 		req.setOpt(new curlpp::options::Url(
 			remote_domain + "/repos/tree?repos=" + remote_repository + (remote_directory.empty()
 				                                                            ? ""
@@ -132,11 +136,12 @@ namespace fileshare
 		req.perform();
 
 		const auto code = curlpp::infos::ResponseCode::get(req);
+		if (code == 403)
+			throw AccessDeniedException();
 		if (code == 404)
 			throw std::runtime_error("Failed to get repository status. 404 : Not found");
 		if (code != 200)
 			throw std::runtime_error(std::string("Failed to get repository status : " + std::to_string(code)));
-
 		nlohmann::json json;
 		try
 		{
@@ -155,14 +160,14 @@ namespace fileshare
 			throw std::runtime_error(
 				"The remote url is not configured. Please update it with 'fileshare remote set <remote>'");
 
-		if (auth_token.empty()) {
-
+		if (auth_token.empty())
+		{
 			std::cout << "You are not logged in. Please connect to your account first." << std::endl;
 
 			int code;
 			int try_cnt = 1;
-			do {
-
+			do
+			{
 #if _WIN32
 				HANDLE hStdin = GetStdHandle(STD_INPUT_HANDLE);
 				DWORD mode = 0;
@@ -204,7 +209,7 @@ namespace fileshare
 
 				std::ostringstream token_stream;
 				const curlpp::options::WriteStream ws(&token_stream);
-				
+
 				cURLpp::Easy req;
 				std::list<std::string> header;
 				header.push_back("Content-Type: application/json");
@@ -232,11 +237,62 @@ namespace fileshare
 				save_config();
 				std::cout << "Successfully logged in !" << std::endl;
 				break;
-
-			} while (code == 401 && try_cnt++ < 3);
+			}
+			while (code == 401 && try_cnt++ < 3);
 
 			if (code != 200)
 				throw std::runtime_error("Connection failed !");
 		}
+	}
+
+	uint64_t RepositoryConfig::get_server_time() const
+	{
+		cURLpp::Easy req;
+		req.setOpt(new curlpp::options::Url(remote_domain + "/time-epoch"));
+		std::ostringstream server_time;
+		const curlpp::options::WriteStream ws(&server_time);
+		req.setOpt(ws);
+		req.perform();
+
+		const auto code = curlpp::infos::ResponseCode::get(req);
+		if (code == 404)
+			throw std::runtime_error("Failed to get server time. 404 : Not found");
+		if (code != 200)
+			throw std::runtime_error(std::string("Failed to get server time : " + std::to_string(code)));
+
+		nlohmann::json json;
+		try
+		{
+			json = nlohmann::json::parse(server_time.str());
+		}
+		catch (const std::exception& e)
+		{
+			throw std::runtime_error(std::string("Failed to get server time. Parse error : ") + e.what());
+		}
+		return json["time_since_epoch"];
+	}
+
+	bool RepositoryConfig::is_sync() const
+	{
+		return std::abs(
+				std::chrono::duration_cast<std::chrono::milliseconds>(
+					std::chrono::system_clock::now().time_since_epoch()).count() -
+				static_cast<int64_t>(get_server_time()))
+			< 1000;
+	}
+
+	void RepositoryConfig::require_sync() const
+	{
+		if (!is_sync()) {
+
+			const auto server = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
+			const auto client = static_cast<int64_t>(get_server_time());
+			throw std::runtime_error("The server is not synchronized with the client. The client has an offset of " + std::to_string((server - client) / 1000) + " seconds !");
+		}
+	}
+
+	bool RepositoryConfig::is_connected() const
+	{
+		return !auth_token.empty();
 	}
 }
