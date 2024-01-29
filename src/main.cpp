@@ -3,7 +3,6 @@
 #include "application.hpp"
 #include "option.hpp"
 #include "repository.hpp"
-#include "url.hpp"
 
 void load_options(int argc, char** argv)
 {
@@ -20,7 +19,7 @@ void load_options(int argc, char** argv)
 
 				fileshare::RepositoryConfig cfg(cfg_file);
 
-				const auto root_dir = fileshare::Directory(cfg_file.parent_path());
+				const auto root_dir = fileshare::Directory(cfg_file.parent_path(), nullptr);
 
 				const auto diffs = root_dir.diff(cfg.fetch_repos_status());
 				for (const auto& diff : diffs)
@@ -40,7 +39,9 @@ void load_options(int argc, char** argv)
 						std::cout << "<";
 						break;
 					}
-					std::cout << " | " << relative(diff.get_path()) << std::endl;
+					auto path = diff.get_path().string();
+					std::replace(path.begin(), path.end(), '\\', '/');
+					std::cout << " | " << path << std::endl;
 				}
 			}
 			catch (const std::exception& e)
@@ -60,8 +61,6 @@ void load_options(int argc, char** argv)
 			{
 				const auto cfg_file = fileshare::RepositoryConfig::search_config_file_or_error(
 					std::filesystem::current_path());
-
-
 			}
 			catch (const std::exception& e)
 			{

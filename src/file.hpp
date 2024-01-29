@@ -1,10 +1,13 @@
 #pragma once
 #include <filesystem>
 #include <chrono>
+#include <iostream>
 #include <nlohmann/json.hpp>
 
 namespace fileshare
 {
+	class Directory;
+
 	class FileTimeType
 	{
 	public:
@@ -46,36 +49,27 @@ namespace fileshare
 	class File
 	{
 	public:
-		File(const nlohmann::json& json) :
-			path(json["path"].get<std::filesystem::path>()),
-			last_write_time(json["time"]),
-			file_size(json["size"])
-		{
-		}
-
-		File(const std::filesystem::directory_entry& in_dir_entry) :
-			path(in_dir_entry),
-			last_write_time(in_dir_entry.last_write_time()),
-			file_size(in_dir_entry.file_size())
-		{
-		}
+		File(const nlohmann::json& json, const Directory* in_parent);
+		File(const std::filesystem::directory_entry& in_dir_entry, const Directory* in_parent);
 
 		[[nodiscard]] const size_t& get_file_size() const { return file_size; }
 		[[nodiscard]] const std::filesystem::path& get_path() const { return path; }
+		[[nodiscard]] const std::filesystem::path& get_name() const { return name; }
 		[[nodiscard]] const FileTimeType& get_last_write_time() const { return last_write_time; }
 
 		[[nodiscard]] nlohmann::json serialize() const
 		{
 			nlohmann::json json;
-			json["path"] = path;
-			json["time"] = last_write_time;
+			json["name"] = name;
+			json["timestamp"] = last_write_time;
 			json["size"] = file_size;
 			return json;
 		}
 
 	private:
-		const std::filesystem::path path;
-		const FileTimeType last_write_time;
-		const size_t file_size;
+		std::filesystem::path name;
+		std::filesystem::path path;
+		FileTimeType last_write_time;
+		size_t file_size;
 	};
 }

@@ -35,24 +35,24 @@ namespace fileshare {
 	{
 	public:
 		Directory();
-		Directory(const nlohmann::json& json);
+		Directory(const nlohmann::json& json, Directory* parent);
 
-		Directory(std::filesystem::path in_path);
+		Directory(const std::filesystem::path& in_path, Directory* parent);
 
 		[[nodiscard]] nlohmann::json serialize() const;
 
-		[[nodiscard]] const Directory* find_directory(const std::filesystem::path& dir_path) const
+		[[nodiscard]] const Directory* find_directory(const std::filesystem::path& name) const
 		{
 			for (const auto& directory : directories)
-				if (directory.path == dir_path)
+				if (directory.name == name)
 					return &directory;
 			return nullptr;
 		}
 
-		[[nodiscard]] const File* find_file(const std::filesystem::path& file_path) const
+		[[nodiscard]] const File* find_file(const std::filesystem::path& name) const
 		{
 			for (const auto& file : files)
-				if (file.get_path() == file_path)
+				if (file.get_name() == name)
 					return &file;
 			return nullptr;
 		}
@@ -66,7 +66,10 @@ namespace fileshare {
 
 		[[nodiscard]] std::vector<File> get_files_recursive() const;
 
+		[[nodiscard]] const std::filesystem::path& get_path() const { return path; }
+
 	private:
+		std::filesystem::path name;
 		std::filesystem::path path;
 		std::vector<File> files;
 		std::vector<Directory> directories;

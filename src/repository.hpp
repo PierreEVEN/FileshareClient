@@ -18,8 +18,6 @@ namespace fileshare
 		void load_config();
 		void save_config() const;
 
-		[[nodiscard]] const Directory& get_root() const { return root; }
-
 		void upload_item(const std::filesystem::path& file);
 
 		[[nodiscard]] std::string get_full_url() const;
@@ -34,7 +32,6 @@ namespace fileshare
 		void require_connection();
 
 	private:
-		Directory root;
 		std::filesystem::path config_path;
 		std::string remote_domain;
 		std::string remote_repository;

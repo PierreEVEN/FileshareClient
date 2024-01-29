@@ -39,7 +39,6 @@ namespace fileshare
 
 
 		nlohmann::json data = nlohmann::json::parse(cfg);
-		root = Directory(data["root"]);
 		if (data.contains("remote_domain"))
 			remote_domain = data["remote_domain"];
 		if (data.contains("remote_repository"))
@@ -59,7 +58,6 @@ namespace fileshare
 	void RepositoryConfig::save_config() const
 	{
 		nlohmann::json json;
-		json["root"] = root.serialize();
 		json["remote_domain"] = remote_domain;
 		json["remote_repository"] = remote_repository;
 		json["remote_directory"] = remote_directory;
@@ -122,10 +120,6 @@ namespace fileshare
 	{
 		require_connection();
 
-		if (remote_domain.empty() || remote_repository.empty())
-			throw std::runtime_error(
-				"The remote url is not configured. Please update it with 'fileshare remote set <remote>'");
-
 		std::ostringstream repos_status;
 		const curlpp::options::WriteStream ws(&repos_status);
 
@@ -146,19 +140,21 @@ namespace fileshare
 		nlohmann::json json;
 		try
 		{
-			std::cout << repos_status.str() << std::endl;
 			json = nlohmann::json::parse(repos_status.str());
 		}
 		catch (const std::exception& e)
 		{
-			std::cout << repos_status.str() << std::endl;
 			throw std::runtime_error(std::string("Failed to get repository status. Parse error : ") + e.what());
 		}
-		return {json};
+		return {json, nullptr};
 	}
 
 	void RepositoryConfig::require_connection()
 	{
+		if (remote_domain.empty() || remote_repository.empty())
+			throw std::runtime_error(
+				"The remote url is not configured. Please update it with 'fileshare remote set <remote>'");
+
 		if (auth_token.empty()) {
 
 			std::cout << "You are not logged in. Please connect to your account first." << std::endl;
