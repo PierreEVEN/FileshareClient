@@ -81,6 +81,31 @@ namespace fileshare
 			return ite->second;
 		}
 		[[nodiscard]] std::unordered_map<std::string, std::string> get_options() const { return options; }
+
+		static std::string encode_url(const std::string& s)
+		{
+			//RFC 3986 section 2.3 Unreserved Characters (January 2005)
+			const std::string unreserved = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_.~";
+
+			std::string escaped;
+			for (const char i : s)
+			{
+				if (unreserved.find_first_of(i) != std::string::npos)
+				{
+					escaped.push_back(i);
+				}
+				else
+				{
+					escaped.append("%");
+					char buf[3];
+					sprintf_s(buf, "%.2X", i);
+					escaped.append(buf);
+				}
+			}
+			return escaped;
+		}
+
+
 	private:
 		bool https = false;
 		std::string domain;

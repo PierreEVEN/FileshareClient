@@ -11,10 +11,7 @@ namespace fileshare
 	class FileTimeType
 	{
 	public:
-		FileTimeType(const std::filesystem::file_time_type& time) :
-			file_time(std::chrono::time_point_cast<std::chrono::seconds>(time).time_since_epoch().count())
-		{
-		}
+		FileTimeType(const std::filesystem::file_time_type& time);
 
 		FileTimeType(const uint64_t& time) : file_time(time)
 		{
@@ -23,8 +20,10 @@ namespace fileshare
 		bool operator<(const FileTimeType& other) const { return file_time < other.file_time; }
 		bool operator>(const FileTimeType& other) const { return file_time > other.file_time; }
 		bool operator==(const FileTimeType& other) const { return file_time == other.file_time; }
+		int64_t operator-(const FileTimeType& other) const { return static_cast<int64_t>(file_time) - other.file_time; }
 
 		friend struct nlohmann::adl_serializer<FileTimeType>;
+		[[nodiscard]] uint64_t milliseconds_since_epoch() const { return file_time; }
 	private:
 		uint64_t file_time;
 	};

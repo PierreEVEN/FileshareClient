@@ -4,6 +4,49 @@
 #include "option.hpp"
 #include "repository.hpp"
 
+std::ostream& human_readable_time(std::ostream& os, int64_t millis)
+{
+	auto ms = std::chrono::milliseconds(millis);
+	using namespace std;
+	using namespace std::chrono;
+	typedef duration<int, ratio<86400>> days;
+	char fill = os.fill();
+	os.fill('0');
+	auto d = duration_cast<days>(ms);
+	ms -= d;
+	auto h = duration_cast<hours>(ms);
+	ms -= h;
+	auto m = duration_cast<minutes>(ms);
+	ms -= m;
+	auto s = duration_cast<seconds>(ms);
+	os << setw(2) << d.count() << "d:"
+		<< setw(2) << h.count() << "h:"
+		<< setw(2) << m.count() << "m:"
+		<< setw(2) << s.count() << 's';
+	os.fill(fill);
+	return os;
+};
+
+template<typename R>
+R execute_with_auth(fileshare::RepositoryConfig& config, std::function<R()> lambda)
+{
+	fileshare::Directory repos_status(nullptr, "");
+	try
+	{
+		return lambda();
+	}
+	catch (const fileshare::AccessDeniedException&)
+	{
+		if (!config.is_connected())
+		{
+			config.require_connection();
+
+			return lambda();
+		}
+		throw;
+	}
+}
+
 void load_options(int argc, char** argv)
 {
 	fileshare::Command root("fileshare");
@@ -19,44 +62,22 @@ void load_options(int argc, char** argv)
 
 				fileshare::RepositoryConfig cfg(cfg_file);
 
-				const auto root_dir = fileshare::Directory(cfg_file.parent_path(), nullptr);
+				if (!cfg.is_connected())
+					cfg.require_connection();
 
-				fileshare::Directory repos_status;
-				try {
-					repos_status = cfg.fetch_repos_status();
-				}
-				catch (const fileshare::AccessDeniedException&)
-				{
-					if (!cfg.is_connected()) {
-						cfg.require_connection();
-						repos_status = cfg.fetch_repos_status();
-					}
-					else
-						throw;
-				}
+				// Get local, saved, and remote tree
+				const auto local_hierarchy = fileshare::Directory::from_path(cfg_file.parent_path(), nullptr);
+				const auto saved_hierarchy = execute_with_auth<fileshare::Directory>(cfg, [&] {return cfg.get_saved_state(); });
+				const auto remote_hierarchy = execute_with_auth<fileshare::Directory>(cfg, [&] {return cfg.fetch_repos_status(); });
 
-				const auto diffs = root_dir.diff(repos_status);
-				for (const auto& diff : diffs)
-				{
-					switch (diff.get_operation())
-					{
-					case fileshare::Diff::Operation::LocalIsNewer:
-						std::cout << ">";
-						break;
-					case fileshare::Diff::Operation::RemoteDoesNotExists:
-						std::cout << "+";
-						break;
-					case fileshare::Diff::Operation::LocalDoesNotExists:
-						std::cout << "-";
-						break;
-					case fileshare::Diff::Operation::LocalIsOlder:
-						std::cout << "<";
-						break;
-					}
-					auto path = diff.get_path().string();
-					std::replace(path.begin(), path.end(), '\\', '/');
-					std::cout << " | " << path << std::endl;
-				}
+				// Compare diff to saved state
+				const auto diff = fileshare::Directory::diff(local_hierarchy, saved_hierarchy, remote_hierarchy);
+
+				for (const auto& [ left, right ] : diff.get_conflicts())
+					std::cout << left.operation_str() << " [X] " << right.operation_str() << " : " << left.get_file().get_path() << std::endl;
+
+				for (const auto& change : diff.get_changes())
+					std::cout << change.operation_str() << " : " << change.get_file().get_path() << std::endl;
 			}
 			catch (const std::exception& e)
 			{
@@ -69,12 +90,16 @@ void load_options(int argc, char** argv)
 
 	// Clone
 	root.add_sub_command({
-		"clone", [&](auto)
+		"clone", [&](auto url)
 		{
 			try
 			{
-				const auto cfg_file = fileshare::RepositoryConfig::search_config_file_or_error(
-					std::filesystem::current_path());
+				if (fileshare::RepositoryConfig::search_config_file(std::filesystem::current_path()))
+					throw std::runtime_error("The current path is already a fileshare repository");
+				fileshare::RepositoryConfig cfg;
+				cfg.set_full_url(url[0]);
+				cfg.require_connection();
+				std::cout << "Cloned new fileshare repository : '" << cfg.get_full_url() << "'" << std::endl;
 			}
 			catch (const std::exception& e)
 			{

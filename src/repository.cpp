@@ -37,8 +37,10 @@ namespace fileshare
 			return;
 		}
 
-
 		nlohmann::json data = nlohmann::json::parse(cfg);
+		if (data.contains("saved_state"))
+			saved_state = Directory::from_json(data["saved_state"], nullptr);
+
 		if (data.contains("remote_domain"))
 			remote_domain = data["remote_domain"];
 		if (data.contains("remote_repository"))
@@ -47,6 +49,8 @@ namespace fileshare
 			remote_directory = data["remote_directory"];
 		if (data.contains("auth_token"))
 			auth_token = data["auth_token"];
+		if (data.contains("auth_token_exp"))
+			auth_token_exp = data["auth_token_exp"];
 	}
 
 	RepositoryConfig::~RepositoryConfig()
@@ -62,6 +66,10 @@ namespace fileshare
 		json["remote_repository"] = remote_repository;
 		json["remote_directory"] = remote_directory;
 		json["auth_token"] = auth_token;
+		json["auth_token_exp"] = auth_token_exp;
+		if (saved_state)
+			json["saved_state"] = saved_state->serialize();
+
 
 		std::ofstream output(config_path, std::ios_base::out);
 
@@ -113,6 +121,7 @@ namespace fileshare
 		remote_domain = url.get_domain();
 		remote_repository = url.get_option("repos") ? *url.get_option("repos") : "";
 		remote_directory = url.get_option("directory") ? *url.get_option("directory") : "";
+		saved_state = {};
 		save_config();
 	}
 
@@ -124,14 +133,15 @@ namespace fileshare
 		const curlpp::options::WriteStream ws(&repos_status);
 
 		cURLpp::Easy req;
-		std::vector<std::string> headers = { "no-redirect:true"};
+		std::list<std::string> headers = {"no-redirect: true"};
 		if (is_connected())
-			headers.push_back("auth-token:" + auth_token);
-		req.setOpt(new curlpp::options::HttpHeader());
+			headers.emplace_back("auth-token: " + auth_token);
+		req.setOpt(new curlpp::options::HttpHeader(headers));
 		req.setOpt(new curlpp::options::Url(
 			remote_domain + "/repos/tree?repos=" + remote_repository + (remote_directory.empty()
 				                                                            ? ""
 				                                                            : "&directory=" + remote_directory)));
+
 		req.setOpt(ws);
 		req.perform();
 
@@ -151,7 +161,42 @@ namespace fileshare
 		{
 			throw std::runtime_error(std::string("Failed to get repository status. Parse error : ") + e.what());
 		}
-		return {json, nullptr};
+		return Directory::from_json(json, nullptr);
+	}
+
+	void RepositoryConfig::download_replace_file(const std::filesystem::path& file)
+	{
+		require_sync();
+
+		const auto encoded_path = Url::encode_url(file.string());
+
+
+		cURLpp::Easy req;
+		std::list<std::string> headers = {"no-redirect: true"};
+		if (is_connected())
+			headers.emplace_back("auth-token: " + auth_token);
+		req.setOpt(new curlpp::options::HttpHeader(headers));
+		req.setOpt(new curlpp::options::Url(remote_domain + "/repos/file?path=" + encoded_path));
+
+		// Move old file TODO add try catch
+		std::optional<std::filesystem::path> moved_path;
+		if (exists(file))
+		{
+			moved_path = file.parent_path() / (file.filename().string() + ".fileshare_outdated");
+			std::filesystem::rename(file, *moved_path);
+		}
+
+		// Download new file
+		std::ofstream repos_status(file);
+		repos_status << req;
+
+		const auto code = curlpp::infos::ResponseCode::get(req);
+		if (code == 403)
+			throw AccessDeniedException();
+		if (code == 404)
+			throw std::runtime_error("Failed to download file. 404 : Not found");
+		if (code != 200)
+			throw std::runtime_error(std::string("Failed to download file : " + std::to_string(code)));
 	}
 
 	void RepositoryConfig::require_connection()
@@ -230,7 +275,13 @@ namespace fileshare
 				if (code != 200)
 					throw std::runtime_error("Cannot connect to server : " + std::to_string(code));
 
-				auth_token = token_stream.str();
+				nlohmann::json token_json = nlohmann::json::parse(token_stream.str());
+				if (!token_json.contains("token"))
+					throw std::runtime_error("Missing token in response");
+				auth_token = token_json["token"];
+				if (!token_json.contains("expiration_date"))
+					throw std::runtime_error("Missing token expiration date in response");
+				auth_token_exp = token_json["expiration_date"];
 
 				if (auth_token.empty())
 					throw std::runtime_error("Failed to retrieve credentials.");
@@ -283,16 +334,27 @@ namespace fileshare
 
 	void RepositoryConfig::require_sync() const
 	{
-		if (!is_sync()) {
-
-			const auto server = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
+		if (!is_sync())
+		{
+			const auto server = std::chrono::duration_cast<std::chrono::milliseconds>(
+				std::chrono::system_clock::now().time_since_epoch()).count();
 			const auto client = static_cast<int64_t>(get_server_time());
-			throw std::runtime_error("The server is not synchronized with the client. The client has an offset of " + std::to_string((server - client) / 1000) + " seconds !");
+			throw std::runtime_error(
+				"The server is not synchronized with the client. The client has an offset of " + std::to_string(
+					(server - client) / 1000) + " seconds !");
 		}
 	}
 
 	bool RepositoryConfig::is_connected() const
 	{
 		return !auth_token.empty();
+	}
+
+	void RepositoryConfig::init_saved_state()
+	{
+		const Directory local = Directory::from_path(config_path.parent_path(), nullptr);
+		const Directory remote = fetch_repos_status();
+		saved_state = Directory::init_saved_state(local, remote, nullptr);
+		save_config();
 	}
 }

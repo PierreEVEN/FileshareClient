@@ -1,43 +1,102 @@
 #pragma once
 #include <filesystem>
 #include <iostream>
+#include <unordered_set>
 
 #include "file.hpp"
 
-namespace fileshare {
-
+namespace fileshare
+{
 	class Diff
 	{
 	public:
 		enum class Operation
 		{
-			RemoteDoesNotExists,
-			LocalDoesNotExists,
-			LocalIsOlder,
-			LocalIsNewer,
+			LocalDelete,
+			LocalRevert,
+			LocalNewer,
+			LocalAdded,
+			RemoteDelete,
+			RemoteRevert,
+			RemoteNewer,
+			RemoteAdded
 		};
 
-		Diff(std::filesystem::path in_path, Operation in_operation) :
+		Diff(File in_file, Operation in_operation, int64_t in_time_difference = 0) :
 			operation(in_operation),
-			path(std::move(in_path))
+			file(std::move(in_file)),
+			time_difference(in_time_difference)
 		{
 		}
 
+		[[nodiscard]] const char* operation_str() const;
+
 		[[nodiscard]] Operation get_operation() const { return operation; }
-		[[nodiscard]] const std::filesystem::path& get_path() const { return path; }
+		[[nodiscard]] int64_t get_time_difference() const { return time_difference; }
+		[[nodiscard]] const File& get_file() const { return file; }
 
 	private:
-		const Operation operation;
-		const std::filesystem::path path;
+		Operation operation;
+		File file;
+		int64_t time_difference;
 	};
+
+	class DiffResult
+	{
+	public:
+		void append(const Diff&& diff)
+		{
+			const auto existing_diff = visited_paths.find(diff.get_file().get_path());
+			// conflict detected
+			if (existing_diff != visited_paths.end())
+			{
+				const auto& other = existing_diff->second;
+				bool is_a_conflict = true;
+				// If file was removed on both sides
+				if (
+					(diff.get_operation() == Diff::Operation::LocalDelete || diff.get_operation() ==
+						Diff::Operation::RemoteDelete) &&
+					(other.get_operation() == Diff::Operation::LocalDelete || other.get_operation() ==
+						Diff::Operation::RemoteDelete))
+					is_a_conflict = false;
+
+				if (is_a_conflict)
+					file_conflicts.emplace_back(other, diff);
+			}
+			visited_paths.insert(std::pair(diff.get_file().get_path(), diff));
+			file_changes.emplace_back(diff);
+		}
+
+		DiffResult& operator+=(const DiffResult& other)
+		{
+			for (const auto& path : other.visited_paths)
+			{
+				if (visited_paths.contains(path.first))
+					throw std::runtime_error("Concatenation of same path in DiffResult");
+				visited_paths.insert(path);
+			}
+			file_conflicts.insert(file_conflicts.begin(), other.file_conflicts.begin(), other.file_conflicts.end());
+			file_changes.insert(file_changes.begin(), other.file_changes.begin(), other.file_changes.end());
+
+			return *this;
+		}
+
+		[[nodiscard]] const std::vector<std::pair<Diff, Diff>>& get_conflicts() const { return file_conflicts; }
+		[[nodiscard]] const std::vector<Diff>& get_changes() const { return file_changes; }
+
+	private:
+		std::vector<std::pair<Diff, Diff>> file_conflicts;
+		std::vector<Diff> file_changes;
+		std::unordered_map<std::filesystem::path, Diff> visited_paths;
+	};
+
 
 	class Directory
 	{
 	public:
-		Directory();
-		Directory(const nlohmann::json& json, Directory* parent);
-
-		Directory(const std::filesystem::path& in_path, Directory* parent);
+		Directory(const Directory* parent, std::filesystem::path name);
+		static Directory from_json(const nlohmann::json& json, const Directory* parent);
+		static Directory from_path(const std::filesystem::path& in_path, const Directory* parent);
 
 		[[nodiscard]] nlohmann::json serialize() const;
 
@@ -57,13 +116,9 @@ namespace fileshare {
 			return nullptr;
 		}
 
-		/// <summary>
-		/// Get local differences agains other directory
-		/// </summary>
-		/// <param name="other">other directory</param>
-		/// <returns></returns>
-		[[nodiscard]] std::vector<Diff> diff(const Directory& other) const;
-
+		[[nodiscard]] static DiffResult diff(const Directory& local, const Directory& saved_state,
+		                                     const Directory& remote);
+		[[nodiscard]] static Directory init_saved_state(const Directory& local, const Directory& remote, const Directory* parent);
 		[[nodiscard]] std::vector<File> get_files_recursive() const;
 
 		[[nodiscard]] const std::filesystem::path& get_path() const { return path; }

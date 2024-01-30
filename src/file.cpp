@@ -6,8 +6,8 @@ namespace fileshare
 {
 	File::File(const nlohmann::json& json, const Directory* parent) :
 		name(json["name"].get<std::filesystem::path>()),
-		last_write_time(json.contains("timestamp") ? json["timestamp"] : 0),
-		file_size(json.contains("size") ? json["size"] : 0)
+		last_write_time(json.contains("timestamp") ? json["timestamp"].get<int64_t>() : 0),
+		file_size(json.contains("size") ? json["size"].get<int64_t>() : 0)
 	{
 		if (parent)
 			path = parent->get_path() / name;
@@ -24,5 +24,10 @@ namespace fileshare
 			path = parent->get_path() / name;
 		else
 			path = name;
+	}
+
+	FileTimeType::FileTimeType(const std::filesystem::file_time_type& time) :
+		file_time(std::chrono::time_point_cast<std::chrono::milliseconds>(std::chrono::clock_cast<std::chrono::system_clock>(time)).time_since_epoch().count())
+	{
 	}
 }

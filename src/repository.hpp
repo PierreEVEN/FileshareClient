@@ -35,21 +35,35 @@ namespace fileshare
 		void set_full_url(const std::string& new_url);
 		
 		[[nodiscard]] Directory fetch_repos_status();
+		[[nodiscard]] void download_replace_file(const std::filesystem::path& file);
 
 		void require_connection();
 
 		[[nodiscard]] uint64_t get_server_time() const;
+		[[nodiscard]] std::filesystem::path get_path() const { return config_path; }
 
 		[[nodiscard]] bool is_sync() const;
 		void require_sync() const;
 
 		[[nodiscard]] bool is_connected() const;
+		[[nodiscard]] const Directory& get_saved_state()
+		{
+			if (!saved_state)
+				init_saved_state();
+			return *saved_state;
+		}
 
 	private:
+
+		void init_saved_state();
+		static Directory init_fill_saved_state_dir(const Directory& local, const Directory& remote);
+
 		std::filesystem::path config_path;
 		std::string remote_domain;
 		std::string remote_repository;
 		std::string remote_directory;
 		std::string auth_token;
+		uint64_t auth_token_exp;
+		std::optional<Directory> saved_state;
 	};
 }
