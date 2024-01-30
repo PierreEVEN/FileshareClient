@@ -27,7 +27,7 @@ std::ostream& human_readable_time(std::ostream& os, int64_t millis)
 	return os;
 };
 
-template<typename R>
+template <typename R>
 R execute_with_auth(fileshare::RepositoryConfig& config, std::function<R()> lambda)
 {
 	fileshare::Directory repos_status(nullptr, "");
@@ -67,14 +67,19 @@ void load_options(int argc, char** argv)
 
 				// Get local, saved, and remote tree
 				const auto local_hierarchy = fileshare::Directory::from_path(cfg_file.parent_path(), nullptr);
-				const auto saved_hierarchy = execute_with_auth<fileshare::Directory>(cfg, [&] {return cfg.get_saved_state(); });
-				const auto remote_hierarchy = execute_with_auth<fileshare::Directory>(cfg, [&] {return cfg.fetch_repos_status(); });
+				const auto saved_hierarchy = execute_with_auth<fileshare::Directory>(cfg, [&]
+				{
+					return cfg.get_saved_state();
+				});
+				const auto remote_hierarchy = execute_with_auth<fileshare::Directory>(
+					cfg, [&] { return cfg.fetch_repos_status(); });
 
 				// Compare diff to saved state
 				const auto diff = fileshare::Directory::diff(local_hierarchy, saved_hierarchy, remote_hierarchy);
 
-				for (const auto& [ left, right ] : diff.get_conflicts())
-					std::cout << left.operation_str() << " [X] " << right.operation_str() << " : " << left.get_file().get_path() << std::endl;
+				for (const auto& [left, right] : diff.get_conflicts())
+					std::cout << left.operation_str() << " [X] " << right.operation_str() << " : " << left.get_file().
+						get_path() << std::endl;
 
 				for (const auto& change : diff.get_changes())
 					std::cout << change.operation_str() << " : " << change.get_file().get_path() << std::endl;
@@ -139,6 +144,52 @@ void load_options(int argc, char** argv)
 					std::filesystem::current_path());
 
 				fileshare::RepositoryConfig cfg(cfg_file);
+
+				if (!cfg.is_connected())
+					cfg.require_connection();
+
+				// Get local, saved, and remote tree
+				const auto local_hierarchy = fileshare::Directory::from_path(cfg_file.parent_path(), nullptr);
+				const auto saved_hierarchy = execute_with_auth<fileshare::Directory>(cfg, [&]
+				{
+					return cfg.get_saved_state();
+				});
+				const auto remote_hierarchy = execute_with_auth<fileshare::Directory>(
+					cfg, [&] { return cfg.fetch_repos_status(); });
+
+				// Compare diff to saved state
+				const auto diffs = fileshare::Directory::diff(local_hierarchy, saved_hierarchy, remote_hierarchy);
+				for (const auto& change : diffs.get_changes())
+				{
+					switch (change.get_operation())
+					{
+					case fileshare::Diff::Operation::LocalRevert:
+						std::cout << "The local file '" << change.get_file().get_path() <<
+							"' is older than previous version. Would you like to keep this outdated version or replace it with the last version on the server ?"
+							<< std::endl;
+					// Update local state to dismiss if needed
+						break;
+
+					case fileshare::Diff::Operation::RemoteDelete:
+						std::cout << "Removing '" << change.get_file().get_path() << "'" << std::endl;
+					// Remove local file
+						break;
+
+					case fileshare::Diff::Operation::RemoteRevert:
+						std::cout << "The remote server contains the file '" << change.get_file().get_path() <<
+							"' that is older than the last saved version. Would you like to retrieve it anyway or keep your local version ?"
+							<< std::endl;
+					// Update local state to dismiss if needed
+						break;
+
+					case fileshare::Diff::Operation::RemoteAdded:
+					case fileshare::Diff::Operation::RemoteNewer:
+						std::cout << "Updating '" << change.get_file().get_path() << "'" << std::endl;
+					// Download from remote
+						break;
+					default: break;
+					}
+				}
 			}
 			catch (const std::exception& e)
 			{
@@ -159,6 +210,53 @@ void load_options(int argc, char** argv)
 					std::filesystem::current_path());
 
 				fileshare::RepositoryConfig cfg(cfg_file);
+
+				if (!cfg.is_connected())
+					cfg.require_connection();
+
+				// Get local, saved, and remote tree
+				const auto local_hierarchy = fileshare::Directory::from_path(cfg_file.parent_path(), nullptr);
+				const auto saved_hierarchy = execute_with_auth<fileshare::Directory>(cfg, [&]
+				{
+					return cfg.get_saved_state();
+				});
+				const auto remote_hierarchy = execute_with_auth<fileshare::Directory>(
+					cfg, [&] { return cfg.fetch_repos_status(); });
+
+				// Compare diff to saved state
+				const auto diffs = fileshare::Directory::diff(local_hierarchy, saved_hierarchy, remote_hierarchy);
+				for (const auto& change : diffs.get_changes())
+				{
+					switch (change.get_operation())
+					{
+					case fileshare::Diff::Operation::LocalNewer:
+					case fileshare::Diff::Operation::LocalAdded:
+						std::cout << "Sending '" << change.get_file().get_path() << "'" << std::endl;
+					// Upload file
+						break;
+
+					case fileshare::Diff::Operation::LocalDelete:
+						std::cout << "Removing '" << change.get_file().get_path() << "'" << std::endl;
+					// Delete on remote
+						break;
+
+					case fileshare::Diff::Operation::LocalRevert:
+						std::cout << "The local file '" << change.get_file().get_path() <<
+							"' is older than the last saved version."
+							<< std::endl;
+					// Update local state to dismiss if needed
+						break;
+
+					case fileshare::Diff::Operation::RemoteRevert:
+						std::cout << "The remote server contains the file '" << change.get_file().get_path() <<
+							"' that is older than the last saved version."
+							<< std::endl;
+					// Update local state to dismiss if needed
+						break;
+
+					default: break;
+					}
+				}
 			}
 			catch (const std::exception& e)
 			{
