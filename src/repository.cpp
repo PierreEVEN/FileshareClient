@@ -127,10 +127,8 @@ namespace fileshare
 
 	Directory RepositoryConfig::fetch_repos_status()
 	{
-        std::cout << "a" << std::endl;
 		require_sync();
 
-        std::cout << "b" << std::endl;
 		std::ostringstream repos_status;
 		const curlpp::options::WriteStream ws(&repos_status);
 
@@ -146,18 +144,9 @@ namespace fileshare
 
 		req.setOpt(ws);
 		req.perform();
-        std::cout << (remote_domain + "/repos/tree?repos=" + remote_repository + (remote_directory.empty()
-                                                                                  ? ""
-                                                                                  : "&directory=" + remote_directory)) << std::endl;
-
-        for (const auto& h : headers)
-            std::cout << "header : " << h << std::endl;
-
 		const auto code = curlpp::infos::ResponseCode::get(req);
 
-        std::cout << "received : " << code << std::endl;
-
-        if (code == 403)
+		if (code == 403)
 			throw AccessDeniedException();
 		if (code == 404)
 			throw std::runtime_error("Failed to get repository status. 404 : Not found");
@@ -175,11 +164,25 @@ namespace fileshare
 		return Directory::from_json(json, nullptr);
 	}
 
-	void RepositoryConfig::download_replace_file(const std::filesystem::path& file)
+	void RepositoryConfig::download_replace_file(const File& file)
 	{
+		const auto& path = file.get_path();
 		require_sync();
 
-		const auto encoded_path = Url::encode_url(file.string());
+		const auto encoded_path = Url::encode_url(path.generic_string());
+
+
+		// Move old file TODO add try catch
+		std::optional<std::filesystem::path> moved_path;
+		if (exists(path))
+		{
+			moved_path = path.parent_path() / (path.filename().generic_string() + ".fileshare_outdated");
+			std::filesystem::rename(path, *moved_path);
+		}
+		else if (!path.parent_path().empty() && !exists(path.parent_path()))
+			create_directories(path.parent_path());
+
+		std::ofstream downloaded_file(path, std::ios_base::out | std::ios_base::binary);
 
 
 		cURLpp::Easy req;
@@ -187,27 +190,45 @@ namespace fileshare
 		if (is_connected())
 			headers.emplace_back("auth-token: " + auth_token);
 		req.setOpt(new curlpp::options::HttpHeader(headers));
-		req.setOpt(new curlpp::options::Url(remote_domain + "/repos/file?path=" + encoded_path));
-
-		// Move old file TODO add try catch
-		std::optional<std::filesystem::path> moved_path;
-		if (exists(file))
+		req.setOpt(new curlpp::options::Url(
+			remote_domain + "/repos/file?path=" + encoded_path + "&repos=" + remote_repository));
+		req.setOpt(new curlpp::options::WriteFunction([&](char* data, size_t size, size_t nmemb) -> size_t
 		{
-			moved_path = file.parent_path() / (file.filename().string() + ".fileshare_outdated");
-			std::filesystem::rename(file, *moved_path);
-		}
+			const size_t real_size = size * nmemb;
+			downloaded_file.write(data, real_size);
+			return real_size;
+		}));
 
-		// Download new file
-		std::ofstream repos_status(file);
-		repos_status << req;
+		req.perform();
+		
+		downloaded_file.close();
+		last_write_time(path, file.get_last_write_time().to_filesystem_time());
 
 		const auto code = curlpp::infos::ResponseCode::get(req);
+
+		// Revert or apply change
+		if (moved_path)
+		{
+			if (code == 200 || code == 0)
+				std::filesystem::remove(*moved_path);
+			else
+			{
+				if (exists(path))
+					std::filesystem::remove(path);
+				std::filesystem::rename(*moved_path, path);
+			}
+		}
+		else if (code != 200 && code != 0)
+			if (exists(path))
+				std::filesystem::remove(path);
+
 		if (code == 403)
 			throw AccessDeniedException();
 		if (code == 404)
 			throw std::runtime_error("Failed to download file. 404 : Not found");
-		if (code != 200)
+		if (code != 200 && code != 0)
 			throw std::runtime_error(std::string("Failed to download file : " + std::to_string(code)));
+		update_saved_state(file);
 	}
 
 	void RepositoryConfig::require_connection()
@@ -359,6 +380,30 @@ namespace fileshare
 	bool RepositoryConfig::is_connected() const
 	{
 		return !auth_token.empty();
+	}
+
+	void RepositoryConfig::update_saved_state(const File& new_state)
+	{
+		const auto& path = new_state.get_path();
+		update_saved_state_dir(new_state, std::vector(path.begin(), path.end()), get_saved_state());
+	}
+
+	void RepositoryConfig::update_saved_state_dir(const File& new_state, const std::vector<std::filesystem::path>& path,
+	                                              Directory& dir)
+	{
+		if (path.size() == 1)
+			dir.replace_insert_file(new_state);
+		else if (auto start = path.begin(); const auto bellow = dir.find_directory(*start))
+			if (bellow)
+				update_saved_state_dir(new_state, std::vector(++start, path.end()), *bellow);
+			else
+			{
+				auto& new_dir = dir.add_directory(*start);
+				update_saved_state_dir(new_state, std::vector(++start, path.end()), new_dir);
+			}
+		else
+			throw std::runtime_error(
+				"Failed to update saved state for file '" + new_state.get_path().generic_string() + "'");
 	}
 
 	void RepositoryConfig::init_saved_state()

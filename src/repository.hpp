@@ -35,7 +35,7 @@ namespace fileshare
 		void set_full_url(const std::string& new_url);
 		
 		[[nodiscard]] Directory fetch_repos_status();
-		void download_replace_file(const std::filesystem::path& file);
+		void download_replace_file(const File& file);
 
 		void require_connection();
 
@@ -46,14 +46,17 @@ namespace fileshare
 		void require_sync() const;
 
 		[[nodiscard]] bool is_connected() const;
-		[[nodiscard]] const Directory& get_saved_state()
+		[[nodiscard]] Directory& get_saved_state()
 		{
 			if (!saved_state)
 				init_saved_state();
 			return *saved_state;
 		}
 
+		void update_saved_state(const File& new_state);
+
 	private:
+		static void update_saved_state_dir(const File& new_state, const std::vector<std::filesystem::path>& path, Directory& dir);
 
 		void init_saved_state();
 		static Directory init_fill_saved_state_dir(const Directory& local, const Directory& remote);

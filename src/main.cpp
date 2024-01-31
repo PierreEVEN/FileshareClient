@@ -185,6 +185,7 @@ void load_options(int argc, char** argv)
 					case fileshare::Diff::Operation::RemoteAdded:
 					case fileshare::Diff::Operation::RemoteNewer:
 						std::cout << "Updating '" << change.get_file().get_path() << "'" << std::endl;
+						cfg.download_replace_file(change.get_file());
 					// Download from remote
 						break;
 					default: break;

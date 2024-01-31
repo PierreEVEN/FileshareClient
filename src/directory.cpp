@@ -1,5 +1,7 @@
 #include "directory.hpp"
 
+#include <fstream>
+
 namespace fileshare
 {
 	const char* Diff::operation_str() const
@@ -27,11 +29,10 @@ namespace fileshare
 	}
 
 	Directory::Directory(const Directory* parent, std::filesystem::path in_name) :
-		name(std::move(in_name)),
-		content_size(0),
-		num_files(0)
+		name(std::move(in_name))
 	{
-		if (parent)
+		is_root_dir = !parent;
+		if (parent && !parent->is_root())
 			path = parent->get_path() / name;
 		else
 			path = name;
@@ -47,8 +48,6 @@ namespace fileshare
 			for (const auto& entry : json["files"])
 			{
 				const auto file = File{entry, &dir};
-				dir.content_size += file.get_file_size();
-				dir.num_files += 1;
 				dir.files.emplace_back(file);
 			}
 
@@ -56,8 +55,6 @@ namespace fileshare
 			for (const auto& entry : json["directories"])
 			{
 				const auto directory = from_json(entry, &dir);
-				dir.content_size += directory.content_size;
-				dir.num_files += directory.num_files;
 				dir.directories.emplace_back(directory);
 			}
 		return dir;
@@ -66,27 +63,39 @@ namespace fileshare
 	Directory Directory::from_path(const std::filesystem::path& in_path, const Directory* parent)
 	{
 		Directory dir(parent, in_path.filename());
+
+		std::unordered_set<std::filesystem::path> excluded_files = {".fileshare"};
 		
+		if (exists(in_path / ".fileshareignore"))
+		{
+			std::ifstream exclusion_file(in_path / ".fileshareignore");
+
+			std::string line;
+			while (std::getline(exclusion_file, line))
+				if (!line.empty()) {
+					excluded_files.insert(line);
+				}
+		}
+
+
 		for (const auto& entry : std::filesystem::directory_iterator(in_path))
 		{
+			if (excluded_files.contains(entry.path().filename()))
+				continue;
 			if (entry.is_regular_file())
 			{
-				const auto file = File{ entry, &dir };
-				dir.content_size += file.get_file_size();
-				dir.num_files += 1;
+				const auto file = File{entry, &dir};
 				dir.files.emplace_back(file);
 			}
 			else if (entry.is_directory())
 			{
-				const auto directory = from_path( entry.path(), &dir );
-				dir.content_size += directory.content_size;
-				dir.num_files += directory.num_files;
+				const auto directory = from_path(entry.path(), &dir);
 				dir.directories.emplace_back(directory);
 			}
 		}
 		return dir;
 	}
-	
+
 	nlohmann::json Directory::serialize() const
 	{
 		nlohmann::json json;
@@ -136,7 +145,7 @@ namespace fileshare
 			if (!local.find_file(saved_file.get_name()))
 				diffs.append({saved_file, Diff::Operation::LocalDelete});
 
-		// Check all remote files with saved state
+		// Compare all remote files with saved state
 		for (const auto& remote_file : remote.files)
 		{
 			if (const auto* saved_file = saved_state.find_file(remote_file.get_name()))
@@ -203,8 +212,6 @@ namespace fileshare
 					result.files.emplace_back(*remote_file);
 				else
 					result.files.emplace_back(local_file);
-				result.num_files += 1;
-				result.content_size += result.files.back().get_file_size();
 			}
 		}
 		for (const auto& local_directory : local.directories)
@@ -212,8 +219,6 @@ namespace fileshare
 			if (const auto* remote_directory = remote.find_directory(local_directory.name))
 			{
 				const auto new_dir = init_saved_state(local_directory, *remote_directory, &result);
-				result.num_files += new_dir.num_files;
-				result.content_size += new_dir.content_size;
 				result.directories.emplace_back(new_dir);
 			}
 		}

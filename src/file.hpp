@@ -24,6 +24,7 @@ namespace fileshare
 
 		friend struct nlohmann::adl_serializer<FileTimeType>;
 		[[nodiscard]] uint64_t milliseconds_since_epoch() const { return file_time; }
+		[[nodiscard]] std::filesystem::file_time_type to_filesystem_time() const;
 	private:
 		uint64_t file_time;
 	};
@@ -47,6 +48,7 @@ namespace fileshare
 {
 	class File
 	{
+		friend class Directory;
 	public:
 		File(const nlohmann::json& json, const Directory* in_parent);
 		File(const std::filesystem::directory_entry& in_dir_entry, const Directory* in_parent);

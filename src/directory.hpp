@@ -107,6 +107,13 @@ namespace fileshare
 					return &directory;
 			return nullptr;
 		}
+		[[nodiscard]] Directory* find_directory(const std::filesystem::path& name)
+		{
+			for (auto& directory : directories)
+				if (directory.name == name)
+					return &directory;
+			return nullptr;
+		}
 
 		[[nodiscard]] const File* find_file(const std::filesystem::path& name) const
 		{
@@ -116,19 +123,39 @@ namespace fileshare
 			return nullptr;
 		}
 
+		void replace_insert_file(const File& new_file)
+		{
+			for (auto& file : files)
+			{
+				if (file.get_name() == new_file.get_name()) {
+					file = new_file;
+					file.path = get_path() / file.get_name();
+					return;
+				}
+			}
+			files.emplace_back(new_file);
+			files.back().path = get_path() / files.back().get_name();
+		}
+
 		[[nodiscard]] static DiffResult diff(const Directory& local, const Directory& saved_state,
 		                                     const Directory& remote);
 		[[nodiscard]] static Directory init_saved_state(const Directory& local, const Directory& remote, const Directory* parent);
 		[[nodiscard]] std::vector<File> get_files_recursive() const;
 
 		[[nodiscard]] const std::filesystem::path& get_path() const { return path; }
+		[[nodiscard]] bool is_root() const { return is_root_dir; }
+
+		Directory& add_directory(const std::filesystem::path& new_dir_name)
+		{
+			directories.emplace_back(this, new_dir_name);
+			return directories.back();
+		}
 
 	private:
+		bool is_root_dir;
 		std::filesystem::path name;
 		std::filesystem::path path;
 		std::vector<File> files;
 		std::vector<Directory> directories;
-		size_t content_size;
-		size_t num_files;
 	};
 }
