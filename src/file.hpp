@@ -30,7 +30,7 @@ namespace fileshare
 }
 
 template <>
-struct ::nlohmann::adl_serializer<fileshare::FileTimeType>
+struct nlohmann::adl_serializer<fileshare::FileTimeType>
 {
 	static void to_json(json& j, const fileshare::FileTimeType& value)
 	{

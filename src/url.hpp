@@ -98,7 +98,11 @@ namespace fileshare
 				{
 					escaped.append("%");
 					char buf[3];
+#if _WIN32
 					sprintf_s(buf, "%.2X", i);
+#else
+                    snprintf(buf, 3, "%.2X"); //syntax using snprintf For Linux
+#endif
 					escaped.append(buf);
 				}
 			}

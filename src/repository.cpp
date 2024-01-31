@@ -127,8 +127,10 @@ namespace fileshare
 
 	Directory RepositoryConfig::fetch_repos_status()
 	{
+        std::cout << "a" << std::endl;
 		require_sync();
 
+        std::cout << "b" << std::endl;
 		std::ostringstream repos_status;
 		const curlpp::options::WriteStream ws(&repos_status);
 
@@ -144,9 +146,18 @@ namespace fileshare
 
 		req.setOpt(ws);
 		req.perform();
+        std::cout << (remote_domain + "/repos/tree?repos=" + remote_repository + (remote_directory.empty()
+                                                                                  ? ""
+                                                                                  : "&directory=" + remote_directory)) << std::endl;
+
+        for (const auto& h : headers)
+            std::cout << "header : " << h << std::endl;
 
 		const auto code = curlpp::infos::ResponseCode::get(req);
-		if (code == 403)
+
+        std::cout << "received : " << code << std::endl;
+
+        if (code == 403)
 			throw AccessDeniedException();
 		if (code == 404)
 			throw std::runtime_error("Failed to get repository status. 404 : Not found");

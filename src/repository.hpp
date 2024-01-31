@@ -8,7 +8,7 @@ namespace fileshare
 {
 	class AccessDeniedException : public std::exception {
 	public:
-		const char* what() const override {
+		[[nodiscard]] const char* what() const noexcept  override {
 			return "Access denied !";
 		}
 	};
@@ -35,7 +35,7 @@ namespace fileshare
 		void set_full_url(const std::string& new_url);
 		
 		[[nodiscard]] Directory fetch_repos_status();
-		[[nodiscard]] void download_replace_file(const std::filesystem::path& file);
+		void download_replace_file(const std::filesystem::path& file);
 
 		void require_connection();
 
