@@ -36,6 +36,9 @@ namespace fileshare
 		
 		[[nodiscard]] Directory fetch_repos_status();
 		void download_replace_file(const File& file);
+        void receive_delete_file(const File& file);
+        void upload_file(const File& file);
+        void send_delete_file(const File& file);
 
 		void require_connection();
 

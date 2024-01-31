@@ -9,6 +9,7 @@
 #include <curlpp/Infos.hpp>
 
 #include "url.hpp"
+#include "mime-db.hpp"
 
 #if _WIN32
 #include <windows.h>
@@ -413,4 +414,95 @@ namespace fileshare
 		saved_state = Directory::init_saved_state(local, remote, nullptr);
 		save_config();
 	}
+
+    void RepositoryConfig::receive_delete_file(const File &file) {
+        throw std::runtime_error("niy");
+    }
+
+    void RepositoryConfig::upload_file(const File &file) {
+        if (!std::filesystem::exists(file.get_path()))
+            throw std::runtime_error("The uploaded file does not exists");
+
+        constexpr int64_t PACKET_SIZE = 20 * 1024 * 1024;
+
+        int64_t total_size = file.get_file_size();
+        int64_t uploaded_size = 0;
+
+        std::ifstream file_read_stream(file.get_path());
+        std::optional<std::string> content_token;
+
+        while (uploaded_size < total_size) {
+
+
+            int64_t packet_size = std::min(PACKET_SIZE, total_size - uploaded_size);
+            const bool is_waiting_content_token = !content_token && packet_size != total_size;
+
+
+
+            cURLpp::Easy req;
+            std::list<std::string> header;
+            header.emplace_back("auth-token: " + auth_token);
+            if (content_token)
+                header.emplace_back("content-token: " + *content_token);
+            else {
+                header.emplace_back("content-name: " + file.get_name().generic_string());
+                header.emplace_back("content-size: " + std::to_string(file.get_file_size()));
+                header.emplace_back("content-mimetype: " + mime::find(file.get_path()));
+                header.emplace_back("content-path: " + file.get_path().generic_string());
+                header.emplace_back("content-description:");
+                header.emplace_back(
+                        "content-timestamp: " + std::to_string(file.get_last_write_time().milliseconds_since_epoch()));
+            }
+            req.setOpt(new curlpp::options::HttpHeader(header));
+            req.setOpt(new curlpp::options::Url(remote_domain + "/repos/upload/file?repos=" + remote_repository));
+
+            static_assert(false, "REPLACE CURLPP WITH LIBCURL BECAUSE IT SUCCS");
+
+            req.setOpt(new curlpp::options::InfileSize(packet_size));
+            req.setOpt(new curlpp::options::ReadFunction([&](char* res, size_t size, size_t nitems) -> size_t {
+                std::cout << "Data ? " << std::endl;
+                const size_t real_size = size * nitems;
+                file_read_stream.read(res, real_size);
+                return real_size;
+            }));
+            req.setOpt(new curlpp::options::CustomRequest{"POST"});
+
+            std::ostringstream repos_status;
+            const curlpp::options::WriteStream ws(&repos_status);
+            if (is_waiting_content_token)
+                req.setOpt(ws);
+            req.perform();
+
+            const auto code = curlpp::infos::ResponseCode::get(req);
+            if (code == 400)
+                throw std::runtime_error("Cannot upload file : 404 Not Found !");
+            if (code == 401)
+                std::cerr << "Invalid credentials. Please try again or create a new account." << std::endl;
+
+            if (is_waiting_content_token && code == 201) {
+                try {
+                    const auto json = nlohmann::json::parse(repos_status.str());
+                    content_token = json["content-token"];
+                    uploaded_size += packet_size;
+                }
+                catch (const std::exception& e) {
+                    std::cout << "Failed to read content token : " << e.what() << std::endl;
+                }
+            }
+            else if (code == 200) {
+                uploaded_size += packet_size;
+            }
+            else if (code == 202) { // Upload complete
+                if (uploaded_size + packet_size != total_size)
+                    throw std::runtime_error("Upload interrupted too early : " + std::to_string(uploaded_size) + " of " + std::to_string(total_size));
+                return;
+            }
+            else
+                throw std::runtime_error("Failed to upload file : " + std::to_string(code));
+        }
+    }
+
+    void RepositoryConfig::send_delete_file(const File &file) {
+        throw std::runtime_error("niy");
+    }
 }

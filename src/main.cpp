@@ -99,6 +99,7 @@ void load_options(int argc, char** argv)
 		{
 			try
 			{
+                std::cout << "todo : create a new dir and don't clone here (also check if dir exists)" << std::endl;
 				if (fileshare::RepositoryConfig::search_config_file(std::filesystem::current_path()))
 					throw std::runtime_error("The current path is already a fileshare repository");
 				fileshare::RepositoryConfig cfg;
@@ -172,6 +173,7 @@ void load_options(int argc, char** argv)
 
 					case fileshare::Diff::Operation::RemoteDelete:
 						std::cout << "Removing '" << change.get_file().get_path() << "'" << std::endl;
+                        cfg.receive_delete_file(change.get_file());
 					// Remove local file
 						break;
 
@@ -233,11 +235,13 @@ void load_options(int argc, char** argv)
 					case fileshare::Diff::Operation::LocalNewer:
 					case fileshare::Diff::Operation::LocalAdded:
 						std::cout << "Sending '" << change.get_file().get_path() << "'" << std::endl;
+                            cfg.upload_file(change.get_file());
 					// Upload file
 						break;
 
 					case fileshare::Diff::Operation::LocalDelete:
 						std::cout << "Removing '" << change.get_file().get_path() << "'" << std::endl;
+                            cfg.send_delete_file(change.get_file());
 					// Delete on remote
 						break;
 
