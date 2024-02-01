@@ -6,13 +6,6 @@
 
 namespace fileshare
 {
-	class AccessDeniedException : public std::exception {
-	public:
-		[[nodiscard]] const char* what() const noexcept  override {
-			return "Access denied !";
-		}
-	};
-
 	class RepositoryConfig
 	{
 	public:
@@ -34,10 +27,10 @@ namespace fileshare
 
 		void set_full_url(const std::string& new_url);
 		
-		[[nodiscard]] Directory fetch_repos_status();
+		[[nodiscard]] Directory fetch_repos_status() const;
 		void download_replace_file(const File& file);
         void receive_delete_file(const File& file);
-        void upload_file(const File& file);
+        void upload_file(const File& file) const;
         void send_delete_file(const File& file);
 
 		void require_connection();

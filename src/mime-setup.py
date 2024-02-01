@@ -30,7 +30,7 @@ for attr, value in ext_dict.items():
 f.write("\t};\n\n")
 
 f.write("\t[[nodiscard]] inline std::string find(const std::filesystem::path& file) {\n")
-f.write("\t\tconst auto& ite = db.find(file.extension());\n")
+f.write("\t\tconst auto& ite = db.find(file.extension().generic_string());\n")
 f.write("\t\treturn ite == db.end() ? \"application/octet-stream\" : ite->second;\n")
 f.write("\t}\n")
 f.write("}\n")

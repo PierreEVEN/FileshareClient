@@ -8,21 +8,18 @@ set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
-FetchContent_Declare(
-        unofficial-curlpp
-        GIT_REPOSITORY https://github.com/jpbarrette/curlpp.git
-        GIT_TAG        v0.8.1
-)
-FetchContent_MakeAvailable(unofficial-curlpp)
-
 find_package (Python COMPONENTS Interpreter Development)
 execute_process(COMMAND ${Python_EXECUTABLE} src/mime-setup.py)
 
-find_package(nlohmann_json CONFIG REQUIRED)
+ find_package(nlohmann_json CONFIG REQUIRED)
+find_package(CURL CONFIG REQUIRED)
 
 file(GLOB_RECURSE SOURCES src/*.cpp src/*.hpp)
 
 add_executable(fileshare ${SOURCES})
 target_include_directories(fileshare PRIVATE src/)
-target_link_libraries(fileshare PRIVATE nlohmann_json::nlohmann_json)
-target_link_libraries(fileshare PRIVATE curlpp)
+target_link_libraries(fileshare PRIVATE nlohmann_json::nlohmann_json CURL::libcurl)
+
+if (WIN32)
+	target_compile_definitions(fileshare PRIVATE NOMINMAX)
+endif()

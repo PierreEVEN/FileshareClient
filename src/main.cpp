@@ -1,8 +1,7 @@
-#include <curlpp/cURLpp.hpp>
-
 #include "application.hpp"
 #include "option.hpp"
 #include "repository.hpp"
+#include "http.hpp"
 
 std::ostream& human_readable_time(std::ostream& os, int64_t millis)
 {
@@ -35,7 +34,7 @@ R execute_with_auth(fileshare::RepositoryConfig& config, std::function<R()> lamb
 	{
 		return lambda();
 	}
-	catch (const fileshare::AccessDeniedException&)
+	catch (const fileshare::Http::AccessDeniedException&)
 	{
 		if (!config.is_connected())
 		{
@@ -343,8 +342,6 @@ int main(int argc, char** argv)
 {
 	try
 	{
-		curlpp::initialize();
-
 		load_options(argc, argv);
 	}
 	catch (const std::exception& e)

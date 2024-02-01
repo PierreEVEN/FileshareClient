@@ -77,7 +77,6 @@ namespace fileshare
 				}
 		}
 
-
 		for (const auto& entry : std::filesystem::directory_iterator(in_path))
 		{
 			if (excluded_files.contains(entry.path().filename()))

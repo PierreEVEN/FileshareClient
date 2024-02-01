@@ -4,10 +4,7 @@
 #include <iostream>
 #include <sstream>
 
-#include <curlpp/Easy.hpp>
-#include <curlpp/Options.hpp>
-#include <curlpp/Infos.hpp>
-
+#include "http.hpp"
 #include "url.hpp"
 #include "mime-db.hpp"
 
@@ -126,43 +123,23 @@ namespace fileshare
 		save_config();
 	}
 
-	Directory RepositoryConfig::fetch_repos_status()
+	Directory RepositoryConfig::fetch_repos_status() const
 	{
 		require_sync();
 
-		std::ostringstream repos_status;
-		const curlpp::options::WriteStream ws(&repos_status);
-
-		cURLpp::Easy req;
-		std::list<std::string> headers = {"no-redirect: true"};
-		if (is_connected())
-			headers.emplace_back("auth-token: " + auth_token);
-		req.setOpt(new curlpp::options::HttpHeader(headers));
-		req.setOpt(new curlpp::options::Url(
-			remote_domain + "/repos/tree?repos=" + remote_repository + (remote_directory.empty()
-				                                                            ? ""
-				                                                            : "&directory=" + remote_directory)));
-
-		req.setOpt(ws);
-		req.perform();
-		const auto code = curlpp::infos::ResponseCode::get(req);
-
-		if (code == 403)
-			throw AccessDeniedException();
-		if (code == 404)
-			throw std::runtime_error("Failed to get repository status. 404 : Not found");
-		if (code != 200)
-			throw std::runtime_error(std::string("Failed to get repository status : " + std::to_string(code)));
-		nlohmann::json json;
 		try
 		{
-			json = nlohmann::json::parse(repos_status.str());
+			Http http(auth_token);
+			return Directory::from_json(http.fetch_json_data(
+				                     remote_domain + "/repos/tree?repos=" + remote_repository + (
+					                     remote_directory.empty()
+						                     ? ""
+						                     : "&directory=" + remote_directory)), nullptr);
 		}
 		catch (const std::exception& e)
 		{
 			throw std::runtime_error(std::string("Failed to get repository status. Parse error : ") + e.what());
 		}
-		return Directory::from_json(json, nullptr);
 	}
 
 	void RepositoryConfig::download_replace_file(const File& file)
@@ -183,52 +160,27 @@ namespace fileshare
 		else if (!path.parent_path().empty() && !exists(path.parent_path()))
 			create_directories(path.parent_path());
 
-		std::ofstream downloaded_file(path, std::ios_base::out | std::ios_base::binary);
-
-
-		cURLpp::Easy req;
-		std::list<std::string> headers = {"no-redirect: true"};
-		if (is_connected())
-			headers.emplace_back("auth-token: " + auth_token);
-		req.setOpt(new curlpp::options::HttpHeader(headers));
-		req.setOpt(new curlpp::options::Url(
-			remote_domain + "/repos/file?path=" + encoded_path + "&repos=" + remote_repository));
-		req.setOpt(new curlpp::options::WriteFunction([&](char* data, size_t size, size_t nmemb) -> size_t
+		try
 		{
-			const size_t real_size = size * nmemb;
-			downloaded_file.write(data, real_size);
-			return real_size;
-		}));
+			Http http(auth_token);
+			std::ofstream downloaded_file(path, std::ios_base::out | std::ios_base::binary);
+			http.fetch_file(remote_domain + "/repos/file?path=" + encoded_path + "&repos=" + remote_repository,
+			                       downloaded_file);
 
-		req.perform();
-		
-		downloaded_file.close();
-		last_write_time(path, file.get_last_write_time().to_filesystem_time());
-
-		const auto code = curlpp::infos::ResponseCode::get(req);
-
-		// Revert or apply change
-		if (moved_path)
-		{
-			if (code == 200 || code == 0)
-				std::filesystem::remove(*moved_path);
-			else
-			{
-				if (exists(path))
-					std::filesystem::remove(path);
-				std::filesystem::rename(*moved_path, path);
-			}
+			downloaded_file.close();
+			last_write_time(path, file.get_last_write_time().to_filesystem_time());
+			std::filesystem::remove(*moved_path);
 		}
-		else if (code != 200 && code != 0)
+		catch (const std::exception&)
+		{
+			// Revert or apply change
 			if (exists(path))
 				std::filesystem::remove(path);
-
-		if (code == 403)
-			throw AccessDeniedException();
-		if (code == 404)
-			throw std::runtime_error("Failed to download file. 404 : Not found");
-		if (code != 200 && code != 0)
-			throw std::runtime_error(std::string("Failed to download file : " + std::to_string(code)));
+			if (moved_path)
+				std::filesystem::rename(*moved_path, path);
+			throw;
+		}
+		
 		update_saved_state(file);
 	}
 
@@ -242,7 +194,6 @@ namespace fileshare
 		{
 			std::cout << "You are not logged in. Please connect to your account first." << std::endl;
 
-			int code;
 			int try_cnt = 1;
 			do
 			{
@@ -283,77 +234,46 @@ namespace fileshare
 				json["username"] = username;
 				json["password"] = password;
 
-				const std::string body = json.dump();
+				Http http;
+				http.set_payload(json.dump());
 
-				std::ostringstream token_stream;
-				const curlpp::options::WriteStream ws(&token_stream);
-
-				cURLpp::Easy req;
-				std::list<std::string> header;
-				header.push_back("Content-Type: application/json");
-				req.setOpt(new curlpp::options::HttpHeader(header));
-				req.setOpt(new curlpp::options::Url(remote_domain + "/auth/gen-token"));
-				req.setOpt(new curlpp::options::PostFields(body));
-				req.setOpt(new curlpp::options::PostFieldSize(static_cast<long>(body.length())));
-				req.setOpt(ws);
-				req.perform();
-				code = curlpp::infos::ResponseCode::get(req);
-				if (code == 400)
-					throw std::runtime_error("Cannot connect to server : 404 Not Found !");
-				if (code == 401)
+				try
 				{
-					std::cerr << "Invalid credentials. Please try again or create a new account." << std::endl;
-					continue;
+					nlohmann::json token_json = http.fetch_json_data(remote_domain + "/auth/gen-token");
+					if (!token_json.contains("token"))
+						throw std::runtime_error("Missing token in response");
+					auth_token = token_json["token"];
+					if (!token_json.contains("expiration_date"))
+						throw std::runtime_error("Missing token expiration date in response");
+					auth_token_exp = token_json["expiration_date"];
+
+					if (auth_token.empty())
+						throw std::runtime_error("Failed to retrieve credentials.");
+					save_config();
+					std::cout << "Successfully logged in !" << std::endl;
+
+					break;
 				}
-				if (code != 200)
-					throw std::runtime_error("Cannot connect to server : " + std::to_string(code));
-
-				nlohmann::json token_json = nlohmann::json::parse(token_stream.str());
-				if (!token_json.contains("token"))
-					throw std::runtime_error("Missing token in response");
-				auth_token = token_json["token"];
-				if (!token_json.contains("expiration_date"))
-					throw std::runtime_error("Missing token expiration date in response");
-				auth_token_exp = token_json["expiration_date"];
-
-				if (auth_token.empty())
-					throw std::runtime_error("Failed to retrieve credentials.");
-				save_config();
-				std::cout << "Successfully logged in !" << std::endl;
-				break;
+				catch (const Http::HttpError& error)
+				{
+					if (error.code() == 404)
+						throw std::runtime_error("Cannot connect to server : 404 Not Found !");
+					if (error.code() == 401)
+					{
+						std::cerr << "Invalid credentials. Please try again or create a new account." << std::endl;
+						continue;
+					}
+					throw std::runtime_error("Cannot connect to server : " + std::to_string(error.code()));
+				}
 			}
-			while (code == 401 && try_cnt++ < 3);
-
-			if (code != 200)
-				throw std::runtime_error("Connection failed !");
+			while (try_cnt++ < 3);
 		}
 	}
 
 	uint64_t RepositoryConfig::get_server_time() const
 	{
-		cURLpp::Easy req;
-		req.setOpt(new curlpp::options::Url(remote_domain + "/time-epoch"));
-		std::ostringstream server_time;
-		const curlpp::options::WriteStream ws(&server_time);
-		req.setOpt(ws);
-		req.perform();
-
-		const auto code = curlpp::infos::ResponseCode::get(req);
-		if (code == 404)
-			throw std::runtime_error("Failed to get server time. 404 : Not found");
-		if (code != 200)
-			throw std::runtime_error(std::string("Failed to get server time : " + std::to_string(code)));
-
-		nlohmann::json json;
-		try
-		{
-			json = nlohmann::json::parse(server_time.str());
-		}
-		catch (const std::exception& e)
-		{
-			throw std::runtime_error(std::string("Failed to get server time. Parse error : ") + e.what());
-		}
-		return json["time_since_epoch"];
+		Http http;
+		return http.fetch_json_data(remote_domain + "/time-epoch")["time_since_epoch"];
 	}
 
 	bool RepositoryConfig::is_sync() const
@@ -415,94 +335,77 @@ namespace fileshare
 		save_config();
 	}
 
-    void RepositoryConfig::receive_delete_file(const File &file) {
-        throw std::runtime_error("niy");
-    }
+	void RepositoryConfig::receive_delete_file(const File& file)
+	{
+		throw std::runtime_error("niy");
+	}
 
-    void RepositoryConfig::upload_file(const File &file) {
-        if (!std::filesystem::exists(file.get_path()))
-            throw std::runtime_error("The uploaded file does not exists");
+	void RepositoryConfig::upload_file(const File& file) const
+	{
+		if (!exists(file.get_path()))
+			throw std::runtime_error("The uploaded file does not exists");
 
-        constexpr int64_t PACKET_SIZE = 20 * 1024 * 1024;
+		constexpr int64_t PACKET_SIZE = 20 * 1024 * 1024;
 
-        int64_t total_size = file.get_file_size();
-        int64_t uploaded_size = 0;
+		int64_t total_size = file.get_file_size();
+		int64_t uploaded_size = 0;
 
-        std::ifstream file_read_stream(file.get_path());
-        std::optional<std::string> content_token;
+		std::ifstream file_read_stream(file.get_path());
+		std::optional<std::string> content_token;
 
-        while (uploaded_size < total_size) {
+		while (uploaded_size < total_size)
+		{
+			int64_t packet_size = std::min(PACKET_SIZE, total_size - uploaded_size);
+			const bool is_waiting_content_token = !content_token && packet_size != total_size;
 
+			Http http(auth_token);
 
-            int64_t packet_size = std::min(PACKET_SIZE, total_size - uploaded_size);
-            const bool is_waiting_content_token = !content_token && packet_size != total_size;
+			if (content_token)
+				http.add_header("content-token: " + *content_token);
+			else
+			{
+				http.add_header("content-name: " + file.get_name().generic_string());
+				http.add_header("content-size: " + std::to_string(file.get_file_size()));
+				http.add_header("content-mimetype: " + mime::find(file.get_path()));
+				http.add_header("content-path: " + file.get_path().generic_string());
+				http.add_header("content-description:");
+				http.add_header("content-timestamp: " + std::to_string(file.get_last_write_time().milliseconds_since_epoch()));
+			}
+			try {
 
+				const auto json = http.upload_file(remote_domain + "/repos/upload/file?repos=" + remote_repository, file_read_stream, packet_size);
 
+				if (is_waiting_content_token && http.get_last_response() == 201)
+				{
+					content_token = json["content-token"];
+					uploaded_size += packet_size;
+				}
+				else if (http.get_last_response() == 200)
+				{
+					uploaded_size += packet_size;
+				}
+				else if (http.get_last_response() == 202)
+				{
+					// Upload complete
+					if (uploaded_size + packet_size != total_size)
+						throw std::runtime_error(
+							"Upload interrupted too early : " + std::to_string(uploaded_size) + " of " + std::to_string(
+								total_size));
+					return;
+				}
+				else
+					throw std::runtime_error("Unhandled http response : " + std::to_string(http.get_last_response()));
 
-            cURLpp::Easy req;
-            std::list<std::string> header;
-            header.emplace_back("auth-token: " + auth_token);
-            if (content_token)
-                header.emplace_back("content-token: " + *content_token);
-            else {
-                header.emplace_back("content-name: " + file.get_name().generic_string());
-                header.emplace_back("content-size: " + std::to_string(file.get_file_size()));
-                header.emplace_back("content-mimetype: " + mime::find(file.get_path()));
-                header.emplace_back("content-path: " + file.get_path().generic_string());
-                header.emplace_back("content-description:");
-                header.emplace_back(
-                        "content-timestamp: " + std::to_string(file.get_last_write_time().milliseconds_since_epoch()));
-            }
-            req.setOpt(new curlpp::options::HttpHeader(header));
-            req.setOpt(new curlpp::options::Url(remote_domain + "/repos/upload/file?repos=" + remote_repository));
+			}
+			catch (const std::exception&)
+			{
+				throw;
+			}
+		}
+	}
 
-            static_assert(false, "REPLACE CURLPP WITH LIBCURL BECAUSE IT SUCCS");
-
-            req.setOpt(new curlpp::options::InfileSize(packet_size));
-            req.setOpt(new curlpp::options::ReadFunction([&](char* res, size_t size, size_t nitems) -> size_t {
-                std::cout << "Data ? " << std::endl;
-                const size_t real_size = size * nitems;
-                file_read_stream.read(res, real_size);
-                return real_size;
-            }));
-            req.setOpt(new curlpp::options::CustomRequest{"POST"});
-
-            std::ostringstream repos_status;
-            const curlpp::options::WriteStream ws(&repos_status);
-            if (is_waiting_content_token)
-                req.setOpt(ws);
-            req.perform();
-
-            const auto code = curlpp::infos::ResponseCode::get(req);
-            if (code == 400)
-                throw std::runtime_error("Cannot upload file : 404 Not Found !");
-            if (code == 401)
-                std::cerr << "Invalid credentials. Please try again or create a new account." << std::endl;
-
-            if (is_waiting_content_token && code == 201) {
-                try {
-                    const auto json = nlohmann::json::parse(repos_status.str());
-                    content_token = json["content-token"];
-                    uploaded_size += packet_size;
-                }
-                catch (const std::exception& e) {
-                    std::cout << "Failed to read content token : " << e.what() << std::endl;
-                }
-            }
-            else if (code == 200) {
-                uploaded_size += packet_size;
-            }
-            else if (code == 202) { // Upload complete
-                if (uploaded_size + packet_size != total_size)
-                    throw std::runtime_error("Upload interrupted too early : " + std::to_string(uploaded_size) + " of " + std::to_string(total_size));
-                return;
-            }
-            else
-                throw std::runtime_error("Failed to upload file : " + std::to_string(code));
-        }
-    }
-
-    void RepositoryConfig::send_delete_file(const File &file) {
-        throw std::runtime_error("niy");
-    }
+	void RepositoryConfig::send_delete_file(const File& file)
+	{
+		throw std::runtime_error("niy");
+	}
 }
