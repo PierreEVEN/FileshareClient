@@ -1,4 +1,5 @@
 #pragma once
+#include <codecvt>
 #include <optional>
 #include <stdexcept>
 #include <string>
@@ -10,50 +11,50 @@ namespace fileshare
 	class Url
 	{
 	public:
-		Url(const std::string& raw_url)
+		Url(const std::wstring& raw_url)
 		{
 			auto url = raw_url;
-			if (url.substr(0, 8) == "https://")
+			if (url.substr(0, 8) == L"https://")
 			{
 				url = url.substr(8);
 				https = true;
 			}
-			else if (url.substr(0, 7) == "http://")
+			else if (url.substr(0, 7) == L"http://")
 			{
 				url = url.substr(7);
 				https = false;
 			}
 			const auto domain_end = url.find('/');
 			const auto path_end = url.find('?');
-			if (domain_end == std::string::npos)
+			if (domain_end == std::wstring::npos)
 			{
-				if (path_end == std::string::npos)
+				if (path_end == std::wstring::npos)
 				{
-					domain = url;
-					path = "";
+					domain = encode_string(url);
+					path.clear();
 				}
 				else
 				{
-					domain = url.substr(0, path_end);
-					path = "";
+					domain = encode_string(url.substr(0, path_end));
+					path.clear();
 				}
 			}
 			else
 			{
-				if (path_end == std::string::npos)
+				if (path_end == std::wstring::npos)
 				{
-					domain = url.substr(0, domain_end);
+					domain = encode_string(url.substr(0, domain_end));
 					path = url.substr(domain_end + 1);
 				}
 				else
 				{
-					domain = url.substr(0, domain_end);
+					domain = encode_string(url.substr(0, domain_end));
 					path = url.substr(domain_end + 1, path_end - domain_end - 1);
 				}
 			}
 
 			options = {};
-			if (path_end != std::string::npos)
+			if (path_end != std::wstring::npos)
 			{
 				url = url.substr(path_end + 1);
 				size_t opt_delim;
@@ -62,59 +63,119 @@ namespace fileshare
 					opt_delim = url.find('&');
 					const auto left = url.substr(0, opt_delim);
 					const auto opt_equals = left.find('=');
-					if (opt_equals == std::string::npos)
+					if (opt_equals == std::wstring::npos)
 						throw std::runtime_error("Invalid URL");
 					options[left.substr(0, opt_equals)] = left.substr(opt_equals + 1);
 					url = url.substr(opt_delim + 1);
-				} while (opt_delim != std::string::npos);
+				} while (opt_delim != std::wstring::npos);
 			}
 		}
 
 		[[nodiscard]] const std::string& get_domain() const { return domain; }
-		[[nodiscard]] const std::string& get_path() const { return path; }
+		[[nodiscard]] const std::wstring& get_path() const { return path; }
 		[[nodiscard]] bool is_https() const { return https; }
-		[[nodiscard]] std::optional<std::string> get_option(const std::string& key) const
+		[[nodiscard]] std::optional<std::wstring> get_option(const std::wstring& key) const
 		{
 			const auto ite = options.find(key);
 			if (ite == options.end())
 				return {};
 			return ite->second;
 		}
-		[[nodiscard]] std::unordered_map<std::string, std::string> get_options() const { return options; }
+		[[nodiscard]] std::unordered_map<std::wstring, std::wstring> get_options() const { return options; }
 
-		static std::string encode_url(const std::string& s)
+
+#pragma warning(push)
+#pragma warning(disable : 4996)
+		// convert UTF-8 string to wstring
+		static std::wstring utf8_to_wstring(std::string const& str)
 		{
-			//RFC 3986 section 2.3 Unreserved Characters (January 2005)
-			const std::string unreserved = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_.~";
-
-			std::string escaped;
-			for (const char i : s)
-			{
-				if (unreserved.find_first_of(i) != std::string::npos)
-				{
-					escaped.push_back(i);
-				}
-				else
-				{
-					escaped.append("%");
-					char buf[3];
-#if _WIN32
-					sprintf_s(buf, "%.2X", i);
-#else
-                    snprintf(buf, 3, "%.2X", i); //syntax using snprintf For Linux
-#endif
-					escaped.append(buf);
-				}
-			}
-			return escaped;
+			std::wstring_convert<std::conditional_t<
+				sizeof(wchar_t) == 4,
+				std::codecvt_utf8<wchar_t>,
+				std::codecvt_utf8_utf16<wchar_t>>> converter;
+			return converter.from_bytes(str);
 		}
 
+		// convert wstring to UTF-8 string
+		static std::string wstring_to_utf8(std::wstring const& str)
+		{
+			std::wstring_convert<std::conditional_t<
+				sizeof(wchar_t) == 4,
+				std::codecvt_utf8<wchar_t>,
+				std::codecvt_utf8_utf16<wchar_t>>> converter;
+			return converter.to_bytes(str);
+		}
 
+		template<typename CharT = wchar_t>
+		static std::string encode_string(const std::basic_string<CharT>& string)
+		{
+			//RFC 3986 section 2.3 Unreserved Characters (January 2005)
+			static const std::wstring unreserved = L"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_.~";
+
+			// Handle wstring case
+			std::string normalized_string;
+			if constexpr (std::is_same_v<wchar_t, CharT>) {
+				normalized_string = wstring_to_utf8(string);
+			}
+			else 
+				normalized_string = string;
+
+			std::string encoded;
+			encoded.reserve(normalized_string.length());
+			for (const char i : normalized_string)
+			{
+				if (unreserved.find_first_of(static_cast<unsigned char>(i)) != std::basic_string<CharT>::npos)
+					encoded.push_back(i);
+				else
+				{
+					encoded.append("%");
+					char buf[3];
+#if _WIN32
+					sprintf_s(buf, "%.2X", static_cast<unsigned char>(i));
+#else
+					snprintf(buf, 3, "%.2X", i); //syntax using snprintf For Linux
+#endif
+					encoded.append(buf);
+				}
+			}
+			return encoded;
+		}
+
+		template<typename CharT = wchar_t>
+		static std::basic_string<CharT> decode_string(const std::string& SRC) {
+			std::string ret;
+			for (int i = 0; i < SRC.length(); i++) {
+				if (SRC[i] == '%') {
+					int decoded;
+#if _WIN32
+					sscanf_s(SRC.substr(i + 1, 2).c_str(), "%x", &decoded);
+#else
+					snscanf(SRC.substr(i + 1, 2).c_str(), "%x", &ii);
+#endif
+					ret.push_back(static_cast<char>(decoded));
+					i += 2;
+				}
+				else if (SRC[i] == '+') {
+					ret.push_back(' ');
+				}
+				else {
+					ret.push_back(SRC[i]);
+				}
+			}
+
+			// Handle wstring case
+			if constexpr (std::is_same_v<wchar_t, CharT>)
+				return utf8_to_wstring(ret);
+			else
+				return ret;
+		}
+#pragma warning(pop)
+		
 	private:
 		bool https = false;
 		std::string domain;
-		std::string path;
-		std::unordered_map<std::string, std::string> options;
+		std::wstring path;
+		std::unordered_map<std::wstring, std::wstring> options;
 	};
 
 }

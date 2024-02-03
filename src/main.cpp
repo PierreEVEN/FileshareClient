@@ -1,3 +1,5 @@
+#include <codecvt>
+
 #include "application.hpp"
 #include "option.hpp"
 #include "repository.hpp"
@@ -48,11 +50,11 @@ R execute_with_auth(fileshare::RepositoryConfig& config, std::function<R()> lamb
 
 void load_options(int argc, char** argv)
 {
-	fileshare::Command root("fileshare");
+	fileshare::Command root(L"fileshare");
 
 	// Repos status
 	root.add_sub_command({
-		"status", [&](auto)
+		L"status", [&](auto)
 		{
 			try
 			{
@@ -77,11 +79,11 @@ void load_options(int argc, char** argv)
 				const auto diff = fileshare::Directory::diff(local_hierarchy, saved_hierarchy, remote_hierarchy);
 
 				for (const auto& [left, right] : diff.get_conflicts())
-					std::cout << left.operation_str() << " [X] " << right.operation_str() << " : " << left.get_file().
-						get_path() << std::endl;
+					std::wcout << left.operation_str() << " [X] " << right.operation_str() << " : " << left.get_file().
+						get_path().generic_wstring() << std::endl;
 
 				for (const auto& change : diff.get_changes())
-					std::cout << change.operation_str() << " : " << change.get_file().get_path() << std::endl;
+					std::wcout << change.operation_str() << " : " << change.get_file().get_path().generic_wstring() << std::endl;
 			}
 			catch (const std::exception& e)
 			{
@@ -89,16 +91,16 @@ void load_options(int argc, char** argv)
 			}
 		},
 		{},
-		"Get synchronization information about the current repository."
+		L"Get synchronization information about the current repository."
 	});
 
 	// Clone
 	root.add_sub_command({
-		"clone", [&](auto url)
+		L"clone", [&](auto url)
 		{
 			try
 			{
-                std::cout << "todo : create a new dir and don't clone here (also check if dir exists)" << std::endl;
+                std::wcout << "todo : create a new dir and don't clone here (also check if dir exists)" << std::endl;
 				if (fileshare::RepositoryConfig::search_config_file(std::filesystem::current_path()))
 					throw std::runtime_error("The current path is already a fileshare repository");
 				fileshare::RepositoryConfig cfg;
@@ -111,13 +113,13 @@ void load_options(int argc, char** argv)
 				std::cerr << e.what() << std::endl;
 			}
 		},
-		{"repository url"},
-		"Clone a distant repository."
+		{L"repository url"},
+		L"Clone a distant repository."
 	});
 
 	// Init
 	root.add_sub_command({
-		"init", [&](auto)
+		L"init", [&](auto)
 		{
 			try
 			{
@@ -131,12 +133,12 @@ void load_options(int argc, char** argv)
 			}
 		},
 		{},
-		"Configure this directory as a fileshare repository."
+		L"Configure this directory as a fileshare repository."
 	});
 
 	// Pull
 	root.add_sub_command({
-		"pull", [&](auto)
+		L"pull", [&](auto)
 		{
 			try
 			{
@@ -164,20 +166,20 @@ void load_options(int argc, char** argv)
 					switch (change.get_operation())
 					{
 					case fileshare::Diff::Operation::LocalRevert:
-						std::cout << "The local file '" << change.get_file().get_path() <<
+						std::wcout << "The local file '" << change.get_file().get_path().generic_wstring() <<
 							"' is older than previous version. Would you like to keep this outdated version or replace it with the last version on the server ?"
 							<< std::endl;
 					// Update local state to dismiss if needed
 						break;
 
 					case fileshare::Diff::Operation::RemoteDelete:
-						std::cout << "Removing '" << change.get_file().get_path() << "'" << std::endl;
+						std::wcout << "Removing '" << change.get_file().get_path().generic_wstring() << "'" << std::endl;
                         cfg.receive_delete_file(change.get_file());
 					// Remove local file
 						break;
 
 					case fileshare::Diff::Operation::RemoteRevert:
-						std::cout << "The remote server contains the file '" << change.get_file().get_path() <<
+						std::wcout << "The remote server contains the file '" << change.get_file().get_path().generic_wstring() <<
 							"' that is older than the last saved version. Would you like to retrieve it anyway or keep your local version ?"
 							<< std::endl;
 					// Update local state to dismiss if needed
@@ -185,7 +187,7 @@ void load_options(int argc, char** argv)
 
 					case fileshare::Diff::Operation::RemoteAdded:
 					case fileshare::Diff::Operation::RemoteNewer:
-						std::cout << "Updating '" << change.get_file().get_path() << "'" << std::endl;
+						std::wcout << "Updating '" << change.get_file().get_path().generic_wstring() << "'" << std::endl;
 						cfg.download_replace_file(change.get_file());
 					// Download from remote
 						break;
@@ -199,12 +201,12 @@ void load_options(int argc, char** argv)
 			}
 		},
 		{},
-		"Retrieve modifications from the server."
+		L"Retrieve modifications from the server."
 	});
 
 	// Push
 	root.add_sub_command({
-		"push", [&](auto)
+		L"push", [&](auto)
 		{
 			try
 			{
@@ -233,26 +235,27 @@ void load_options(int argc, char** argv)
 					{
 					case fileshare::Diff::Operation::LocalNewer:
 					case fileshare::Diff::Operation::LocalAdded:
-						std::cout << "Sending '" << change.get_file().get_path() << "'" << std::endl;
+						std::wcout << "test : " << change.get_file().get_name() << std::endl;
+						std::wcout << "Sending '" << change.get_file().get_path().generic_wstring() << "'" << std::endl;
                             cfg.upload_file(change.get_file());
 					// Upload file
 						break;
 
 					case fileshare::Diff::Operation::LocalDelete:
-						std::cout << "Removing '" << change.get_file().get_path() << "'" << std::endl;
+						std::wcout << "Removing '" << change.get_file().get_path().generic_wstring() << "'" << std::endl;
                             cfg.send_delete_file(change.get_file());
 					// Delete on remote
 						break;
 
 					case fileshare::Diff::Operation::LocalRevert:
-						std::cout << "The local file '" << change.get_file().get_path() <<
+						std::wcout << "The local file '" << change.get_file().get_path().generic_wstring() <<
 							"' is older than the last saved version."
 							<< std::endl;
 					// Update local state to dismiss if needed
 						break;
 
 					case fileshare::Diff::Operation::RemoteRevert:
-						std::cout << "The remote server contains the file '" << change.get_file().get_path() <<
+						std::wcout << "The remote server contains the file '" << change.get_file().get_path().generic_wstring() <<
 							"' that is older than the last saved version."
 							<< std::endl;
 					// Update local state to dismiss if needed
@@ -268,12 +271,12 @@ void load_options(int argc, char** argv)
 			}
 		},
 		{},
-		"Send modifications to the server."
+		L"Send modifications to the server."
 	});
 
 	// Sync
 	root.add_sub_command({
-		"sync", [&](auto)
+		L"sync", [&](auto)
 		{
 			try
 			{
@@ -288,14 +291,14 @@ void load_options(int argc, char** argv)
 			}
 		},
 		{},
-		"Synchronise this repository with the server. (equivalent to 'fileshare pull push')"
+		L"Synchronise this repository with the server. (equivalent to 'fileshare pull push')"
 	});
 
 	// Get-Set remote
 	{
-		fileshare::Command remote("remote");
+		fileshare::Command remote(L"remote");
 		remote.add_sub_command({
-			"set", [&](auto url)
+			L"set", [&](auto url)
 			{
 				try
 				{
@@ -311,11 +314,11 @@ void load_options(int argc, char** argv)
 					std::cerr << e.what() << std::endl;
 				}
 			},
-			{"remote"},
-			"Set the url to the remote server."
+			{L"remote"},
+			L"Set the url to the remote server."
 		});
 		remote.add_sub_command({
-			"get", [&](auto)
+			L"get", [&](auto)
 			{
 				try
 				{
@@ -330,7 +333,7 @@ void load_options(int argc, char** argv)
 				}
 			},
 			{},
-			"Get the url to the remote server."
+			L"Get the url to the remote server."
 		});
 		root.add_sub_command(remote);
 	}

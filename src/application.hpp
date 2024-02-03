@@ -11,29 +11,16 @@ namespace fileshare {
 	class Repository
 	{
 	public:
-		Repository(const nlohmann::json& json) :
-			local_path(json["local_path"].get<std::filesystem::path>()),
-			remote_url(json["remote_url"]),
-			user_token(json["user_token"])
-		{
-		}
+		Repository(const nlohmann::json& json);
 
-		[[nodiscard]] nlohmann::json serialize() const
-		{
-			nlohmann::json json;
-			json["local_path"] = local_path;
-			json["remote_url"] = remote_url;
-			json["user_token"] = user_token;
-			//json["state"] = state.serialize();
-			return json;
-		}
+		[[nodiscard]] nlohmann::json serialize() const;
 
 		[[nodiscard]] const std::filesystem::path& get_local_path() const { return local_path; }
 
 	private:
 		std::filesystem::path local_path;
-		std::string remote_url;
-		std::string user_token;
+		std::wstring remote_url;
+		std::wstring user_token;
 	};
 
 

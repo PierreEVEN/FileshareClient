@@ -1,11 +1,12 @@
 #include "file.hpp"
 
 #include "directory.hpp"
+#include "url.hpp"
 
 namespace fileshare
 {
 	File::File(const nlohmann::json& json, const Directory* parent) :
-		name(json["name"].get<std::filesystem::path>()),
+		name(Url::decode_string(json["name"])),
 		last_write_time(json.contains("timestamp") ? json["timestamp"].get<int64_t>() : 0),
 		file_size(json.contains("size") ? json["size"].get<int64_t>() : 0)
 	{
@@ -24,6 +25,15 @@ namespace fileshare
 			path = parent->get_path() / name;
 		else
 			path = name;
+	}
+
+	nlohmann::json File::serialize() const
+	{
+		nlohmann::json json;
+		json["name"] = Url::encode_string(name.generic_wstring());
+		json["timestamp"] = last_write_time;
+		json["size"] = file_size;
+		return json;
 	}
 
 	FileTimeType::FileTimeType(const std::filesystem::file_time_type& time) :

@@ -30,7 +30,11 @@ for attr, value in ext_dict.items():
 f.write("\t};\n\n")
 
 f.write("\t[[nodiscard]] inline std::string find(const std::filesystem::path& file) {\n")
-f.write("\t\tconst auto& ite = db.find(file.extension().generic_string());\n")
+f.write("\t\tauto ext = file.extension().generic_string();\n")
+f.write("\t\tif (ext.empty())\n")
+f.write("\t\t\treturn \"application/octet-stream\";\n")
+f.write("\t\tstd::ranges::transform(ext, ext.begin(), [](const unsigned char c) { return std::tolower(c); });\n")
+f.write("\t\tconst auto& ite = db.find(ext.substr(1));\n")
 f.write("\t\treturn ite == db.end() ? \"application/octet-stream\" : ite->second;\n")
 f.write("\t}\n")
 f.write("}\n")

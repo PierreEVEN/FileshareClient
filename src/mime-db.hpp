@@ -1210,8 +1210,11 @@ namespace mime {
 	};
 
 	[[nodiscard]] inline std::string find(const std::filesystem::path& file) {
-		std::unordered_map<std::string, std::string> test = {};
-		const auto& ite = db.find(file.extension().generic_string());
+		auto ext = file.extension().generic_string();
+		if (ext.empty())
+			return "application/octet-stream";
+		std::ranges::transform(ext, ext.begin(), [](const unsigned char c) { return std::tolower(c); });
+		const auto& ite = db.find(ext.substr(1));
 		return ite == db.end() ? "application/octet-stream" : ite->second;
 	}
 }

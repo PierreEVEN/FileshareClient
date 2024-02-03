@@ -1,10 +1,29 @@
 #include "application.hpp"
 
+#include "url.hpp"
+
 #if !_WIN32
 #include <unistd.h>
 #include <sys/types.h>
 #include <pwd.h>
 #endif
+
+fileshare::Repository::Repository(const nlohmann::json& json) :
+	local_path(Url::decode_string(json["local_path"])),
+	remote_url(Url::decode_string(json["remote_url"])),
+	user_token(Url::decode_string(json["user_token"]))
+{
+}
+
+nlohmann::json fileshare::Repository::serialize() const
+{
+	nlohmann::json json;
+	json["local_path"] = Url::encode_string(local_path.generic_wstring());
+	json["remote_url"] = Url::encode_string(remote_url);
+	json["user_token"] = Url::encode_string(user_token);
+	//json["state"] = state.serialize();
+	return json;
+}
 
 fileshare::AppConfig::AppConfig(std::optional<std::filesystem::path> in_config_path)
 {

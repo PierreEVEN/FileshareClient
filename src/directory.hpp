@@ -44,28 +44,7 @@ namespace fileshare
 	class DiffResult
 	{
 	public:
-		void append(const Diff&& diff)
-		{
-			const auto existing_diff = visited_paths.find(diff.get_file().get_path());
-			// conflict detected
-			if (existing_diff != visited_paths.end())
-			{
-				const auto& other = existing_diff->second;
-				bool is_a_conflict = true;
-				// If file was removed on both sides
-				if (
-					(diff.get_operation() == Diff::Operation::LocalDelete || diff.get_operation() ==
-						Diff::Operation::RemoteDelete) &&
-					(other.get_operation() == Diff::Operation::LocalDelete || other.get_operation() ==
-						Diff::Operation::RemoteDelete))
-					is_a_conflict = false;
-
-				if (is_a_conflict)
-					file_conflicts.emplace_back(other, diff);
-			}
-			visited_paths.insert(std::pair(diff.get_file().get_path(), diff));
-			file_changes.emplace_back(diff);
-		}
+		void append(const Diff&& diff);
 
 		DiffResult& operator+=(const DiffResult& other)
 		{
@@ -135,6 +114,17 @@ namespace fileshare
 			}
 			files.emplace_back(new_file);
 			files.back().path = get_path() / files.back().get_name();
+		}
+
+		void delete_file(const std::filesystem::path& file_name)
+		{
+			for (auto ite = files.begin(); ite != files.end(); ++ite)
+			{
+				if (ite->get_name() == file_name) {
+					files.erase(ite);
+					return;
+				}
+			}
 		}
 
 		[[nodiscard]] static DiffResult diff(const Directory& local, const Directory& saved_state,

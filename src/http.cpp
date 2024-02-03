@@ -27,13 +27,17 @@ namespace fileshare
 
 		if (payload)
 		{
-			curl_easy_setopt(*curl, CURLOPT_POSTFIELDS, *payload);
+			curl_easy_setopt(*curl, CURLOPT_POSTFIELDS, payload->c_str());
 			curl_easy_setopt(*curl, CURLOPT_POSTFIELDSIZE_LARGE, payload->size());
 		}
 
 		curl_slist* header_list = nullptr;
 		for (const auto& header : headers)
 			header_list = curl_slist_append(header_list, header.c_str());
+		if (payload) {
+			header_list = curl_slist_append(header_list, "Content-Type: application/json");
+			header_list = curl_slist_append(header_list, "Accept: application/json");
+		}
 		curl_easy_setopt(*curl, CURLOPT_HTTPHEADER, header_list);
 
 		return curl;
@@ -47,7 +51,7 @@ namespace fileshare
 	nlohmann::json Http::fetch_json_data(const std::string& url)
 	{
 		const CurlBox curl = prepareRequest();
-
+		
 		std::string json_raw;
 		curl_easy_setopt(*curl, CURLOPT_URL, url.c_str());
 
@@ -72,6 +76,34 @@ namespace fileshare
 		case 201:
 		case 202:
 			return nlohmann::json::parse(json_raw);
+		default:
+			throw HttpError(last_response);
+		}
+	}
+
+	void Http::post_request(const std::string& url)
+	{
+		const CurlBox curl = prepareRequest();
+		
+		curl_easy_setopt(*curl, CURLOPT_URL, url.c_str());
+
+		curl_easy_setopt(*curl, CURLOPT_POST, 1L);
+		curl_easy_setopt(*curl, CURLOPT_POSTFIELDSIZE, 0);
+
+		curl_easy_perform(*curl);
+		curl_easy_getinfo(*curl, CURLINFO_RESPONSE_CODE, &last_response);
+
+		switch (last_response)
+		{
+		case 404:
+		case 0:
+			throw NotFoundException();
+		case 403:
+			throw AccessDeniedException();
+		case 200:
+		case 201:
+		case 202:
+			return;
 		default:
 			throw HttpError(last_response);
 		}
@@ -108,21 +140,10 @@ namespace fileshare
 			throw HttpError(last_response);
 		}
 	}
-
-	static int recv_any(CURL* curl)
-	{
-		size_t rlen;
-		const struct curl_ws_frame* meta;
-		char buffer[256];
-		CURLcode result = curl_ws_recv(curl, buffer, sizeof(buffer), &rlen, &meta);
-		if (result)
-			throw std::runtime_error("recv_init() failed: " + std::string(curl_easy_strerror(result)));
-
-		return 0;
-	}
-
+	
 	nlohmann::json Http::upload_file(const std::string& url, std::istream& file, size_t uploaded_size)
     {
+		headers.emplace_back("Content-Type:application/octet-stream");
 		const CurlBox curl = prepareRequest();
 
 		std::string json_raw;
@@ -140,14 +161,8 @@ namespace fileshare
         std::vector<char> data(uploaded_size);
         file.read(data.data(), data.size());
 
-
-        curl_mime* mime = curl_mime_init(*curl);
-        curl_mimepart* part = curl_mime_addpart(mime);
-        curl_mime_type(part, "application/octet-stream");
-        curl_mime_data(part, data.data(), data.size());
-
-        /* Post and send it. */
-        curl_easy_setopt(*curl, CURLOPT_MIMEPOST, mime);
+		curl_easy_setopt(*curl, CURLOPT_POSTFIELDS, data.data());
+		curl_easy_setopt(*curl, CURLOPT_POSTFIELDSIZE_LARGE, data.size());
 
         /* PERFORM */
         size_t crash_g = file.tellg();

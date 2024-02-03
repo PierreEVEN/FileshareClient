@@ -58,14 +58,7 @@ namespace fileshare
 		[[nodiscard]] const std::filesystem::path& get_name() const { return name; }
 		[[nodiscard]] const FileTimeType& get_last_write_time() const { return last_write_time; }
 
-		[[nodiscard]] nlohmann::json serialize() const
-		{
-			nlohmann::json json;
-			json["name"] = name;
-			json["timestamp"] = last_write_time;
-			json["size"] = file_size;
-			return json;
-		}
+		[[nodiscard]] nlohmann::json serialize() const;
 
 	private:
 		std::filesystem::path name;

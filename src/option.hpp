@@ -12,23 +12,17 @@ namespace fileshare
 		friend class Option;
 	public:
 		static void default_callback();
-		using Callback = std::function<void(const std::vector<std::string>&)>;
+		using Callback = std::function<void(const std::vector<std::wstring>&)>;
 
-		Command(std::string in_name, std::optional<Callback> in_callback = {}, std::vector<std::string> in_args = {},
-		        std::string in_hint = "") :
-			name(std::move(in_name)),
-			hint(std::move(in_hint)),
-			args(std::move(in_args))
-		{
-			callback = in_callback ? *in_callback : [&](auto) {throw std::runtime_error("The command option '" + name + "' is not valid"); };
-		}
+		Command(std::wstring in_name, std::optional<Callback> in_callback = {}, std::vector<std::wstring> in_args = {},
+			std::wstring in_hint = L"");
 
 		void add_sub_command(Command sub_cmd)
 		{
 			sub_commands.emplace_back(std::move(sub_cmd));
 		}
 
-		[[nodiscard]] const Command* find_command(const std::string& command) const
+		[[nodiscard]] const Command* find_command(const std::wstring& command) const
 		{
 			for (const auto& cmd : sub_commands)
 				if (cmd.name == command)
@@ -38,16 +32,16 @@ namespace fileshare
 
 	private:
 		std::vector<Command> sub_commands;
-		std::string name;
-		std::string hint;
-		std::vector<std::string> args;
+		std::wstring name;
+		std::wstring hint;
+		std::vector<std::wstring> args;
 		Callback callback;
 	};
 
 	class Option
 	{
 	public:
-		Option() : root(Command{"fileshare"})
+		Option() : root(Command{L"fileshare"})
 		{
 		}
 
@@ -59,12 +53,12 @@ namespace fileshare
 
 		static void parse(int argc, char** argv, Command root);
 
-		void print_help(const std::string& option = "") const;
+		void print_help(const std::wstring& option = L"") const;
 
 	private:
 
 		void print_command(int rec_level, const Command& base) const;
-		bool parse_command(std::vector<std::string>::iterator& ite, const std::vector<std::string>::iterator& end, const Command& context);
+		bool parse_command(std::vector<std::wstring>::iterator& ite, const std::vector<std::wstring>::iterator& end, const Command& context);
 		Command root;
 	};
 }

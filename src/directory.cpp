@@ -2,6 +2,13 @@
 
 #include <fstream>
 
+#include "url.hpp"
+
+#if WIN32
+#include <io.h>
+#include <fcntl.h>
+#endif
+
 namespace fileshare
 {
 	const char* Diff::operation_str() const
@@ -28,6 +35,31 @@ namespace fileshare
 		return "O";
 	}
 
+	void DiffResult::append(const Diff&& diff)
+	{
+		const auto existing_diff = visited_paths.find(diff.get_file().get_path());
+		// conflict detected
+		if (existing_diff != visited_paths.end())
+		{
+			const auto& other = existing_diff->second;
+			bool is_a_conflict = true;
+			// If file was removed on both sides
+			if (
+				(diff.get_operation() == Diff::Operation::LocalDelete || diff.get_operation() ==
+					Diff::Operation::RemoteDelete) &&
+				(other.get_operation() == Diff::Operation::LocalDelete || other.get_operation() ==
+					Diff::Operation::RemoteDelete))
+				is_a_conflict = false;
+
+			if (is_a_conflict)
+				file_conflicts.emplace_back(other, diff);
+		}
+		else {
+			visited_paths.insert(std::pair(diff.get_file().get_path(), diff));
+			file_changes.emplace_back(diff);
+		}
+	}
+
 	Directory::Directory(const Directory* parent, std::filesystem::path in_name) :
 		name(std::move(in_name))
 	{
@@ -42,7 +74,7 @@ namespace fileshare
 	{
 		if (!json.contains("name"))
 			throw std::runtime_error("Missing directory name in retrieved data");
-		Directory dir(parent, json["name"].get<std::filesystem::path>());
+		Directory dir(parent, Url::decode_string(json["name"]));
 
 		if (json.contains("files"))
 			for (const auto& entry : json["files"])
@@ -62,15 +94,19 @@ namespace fileshare
 
 	Directory Directory::from_path(const std::filesystem::path& in_path, const Directory* parent)
 	{
+#if WIN32
+		_setmode(_fileno(stdout), _O_U16TEXT);
+#endif
+
 		Directory dir(parent, in_path.filename());
 
 		std::unordered_set<std::filesystem::path> excluded_files = {".fileshare"};
 		
 		if (exists(in_path / ".fileshareignore"))
 		{
-			std::ifstream exclusion_file(in_path / ".fileshareignore");
+			std::wifstream exclusion_file(in_path / ".fileshareignore");
 
-			std::string line;
+			std::wstring line;
 			while (std::getline(exclusion_file, line))
 				if (!line.empty()) {
 					excluded_files.insert(line);
@@ -83,6 +119,8 @@ namespace fileshare
 				continue;
 			if (entry.is_regular_file())
 			{
+				if (entry.file_size() == 0)
+					continue;
 				const auto file = File{entry, &dir};
 				dir.files.emplace_back(file);
 			}
@@ -110,7 +148,7 @@ namespace fileshare
 		for (const auto& directory : directories)
 			directory_json.emplace_back(directory.serialize());
 
-		json["name"] = name;
+		json["name"] = Url::encode_string(name.generic_wstring());
 		json["files"] = files_json;
 		json["directories"] = directory_json;
 
@@ -161,6 +199,11 @@ namespace fileshare
 				diffs.append({remote_file, Diff::Operation::RemoteAdded});
 			}
 		}
+
+		// Check for remote removed files
+		for (const auto& saved_file : saved_state.files)
+			if (!remote.find_file(saved_file.get_name()))
+				diffs.append({ saved_file, Diff::Operation::RemoteDelete });
 
 		// Go deeper in directory hierarchy
 		for (const auto& saved_dir : saved_state.directories)

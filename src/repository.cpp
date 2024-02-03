@@ -18,19 +18,22 @@
 namespace fileshare
 {
 	RepositoryConfig::RepositoryConfig(const std::filesystem::path& config_file_path)
-		: config_path(absolute(config_file_path))
+		: config_dir_path(absolute(config_file_path))
 	{
-		load_config();
-	}
+		if (!exists(config_dir_path))
+			create_directories(config_dir_path);
 
+		const auto config_path = config_dir_path / "config.fileshare";
+		const auto config_tmp_path = config_dir_path / "tmp.fileshare";
 
-	void RepositoryConfig::load_config()
-	{
+		if (exists(config_tmp_path))
+			remove(config_tmp_path);
+		
 		std::ifstream cfg(config_path);
 
 		if (!cfg.is_open())
 		{
-			std::cout << "Created new fileshare configuration file in " << absolute(config_path).parent_path() <<
+			std::cout << "Created new fileshare configuration file in " << absolute(config_dir_path).parent_path() <<
 				std::endl;
 			return;
 		}
@@ -42,9 +45,9 @@ namespace fileshare
 		if (data.contains("remote_domain"))
 			remote_domain = data["remote_domain"];
 		if (data.contains("remote_repository"))
-			remote_repository = data["remote_repository"];
+			remote_repository = Url::decode_string(data["remote_repository"]);
 		if (data.contains("remote_directory"))
-			remote_directory = data["remote_directory"];
+			remote_directory = Url::decode_string(data["remote_directory"]);
 		if (data.contains("auth_token"))
 			auth_token = data["auth_token"];
 		if (data.contains("auth_token_exp"))
@@ -53,28 +56,34 @@ namespace fileshare
 
 	RepositoryConfig::~RepositoryConfig()
 	{
-		save_config();
-	}
-
-
-	void RepositoryConfig::save_config() const
-	{
 		nlohmann::json json;
 		json["remote_domain"] = remote_domain;
-		json["remote_repository"] = remote_repository;
-		json["remote_directory"] = remote_directory;
+		json["remote_repository"] = Url::encode_string(remote_repository);
+		json["remote_directory"] = Url::encode_string(remote_directory);
 		json["auth_token"] = auth_token;
 		json["auth_token_exp"] = auth_token_exp;
 		if (saved_state)
 			json["saved_state"] = saved_state->serialize();
 
+		const auto config_tmp_path = config_dir_path / "tmp.fileshare";
 
-		std::ofstream output(config_path, std::ios_base::out);
+		if (exists(config_tmp_path))
+			remove(config_tmp_path);
 
-		if (!output.is_open())
-			throw std::runtime_error("Failed to write repository configuration");
+		std::ofstream output(config_tmp_path, std::ios_base::out);
 
 		output << json;
+		output.close();
+		if (exists(config_dir_path / "config.fileshare"))
+			remove(config_dir_path / "config.fileshare");
+		// Overwrite old config only if everything was successfull
+		try {
+			std::filesystem::rename(config_tmp_path, config_dir_path / "config.fileshare");
+		}
+		catch (const std::exception& e)
+		{
+			std::cerr << "Failed to save repository config : " << e.what() << std::endl;
+		}
 	}
 
 	std::optional<std::filesystem::path> RepositoryConfig::search_config_file(const std::filesystem::path& path)
@@ -82,7 +91,7 @@ namespace fileshare
 		const auto abs_path = absolute(path);
 
 		for (const auto& file : std::filesystem::directory_iterator(abs_path))
-			if (file.is_regular_file() && file.path().filename() == ".fileshare")
+			if (file.is_directory() && file.path().filename() == ".fileshare")
 				return file;
 
 		if (abs_path.has_parent_path() && abs_path.parent_path() != abs_path)
@@ -100,27 +109,22 @@ namespace fileshare
 		throw std::runtime_error("Not a fileshare repository");
 	}
 
-	void RepositoryConfig::upload_item(const std::filesystem::path& file)
-	{
-	}
-
 	std::string RepositoryConfig::get_full_url() const
 	{
 		if (remote_repository.empty())
 			throw std::runtime_error("The remote repos have not been set correctly");
-		return remote_domain + "/repos?repos=" + remote_repository + (remote_directory.empty()
+		return remote_domain + "/repos?repos=" + Url::encode_string(remote_repository) + (remote_directory.empty()
 			                                                              ? ":"
-			                                                              : "&directory=" + remote_directory);
+			                                                              : "&directory=" + Url::encode_string(remote_directory));
 	}
 
-	void RepositoryConfig::set_full_url(const std::string& new_url)
+	void RepositoryConfig::set_full_url(const std::wstring& new_url)
 	{
 		const Url url(new_url);
 		remote_domain = url.get_domain();
-		remote_repository = url.get_option("repos") ? *url.get_option("repos") : "";
-		remote_directory = url.get_option("directory") ? *url.get_option("directory") : "";
+		remote_repository = url.get_option(L"repos") ? *url.get_option(L"repos") : L"";
+		remote_directory = url.get_option(L"directory") ? *url.get_option(L"directory") : L"";
 		saved_state = {};
-		save_config();
 	}
 
 	Directory RepositoryConfig::fetch_repos_status() const
@@ -131,10 +135,10 @@ namespace fileshare
 		{
 			Http http(auth_token);
 			return Directory::from_json(http.fetch_json_data(
-				                     remote_domain + "/repos/tree?repos=" + remote_repository + (
-					                     remote_directory.empty()
-						                     ? ""
-						                     : "&directory=" + remote_directory)), nullptr);
+				                            remote_domain + "/repos/tree?repos=" + Url::encode_string(remote_repository) + (
+					                            remote_directory.empty()
+						                            ? ""
+						                            : "&directory=" + Url::encode_string(remote_directory))), nullptr);
 		}
 		catch (const std::exception& e)
 		{
@@ -147,13 +151,11 @@ namespace fileshare
 		const auto& path = file.get_path();
 		require_sync();
 
-		const auto encoded_path = Url::encode_url(path.generic_string());
-        
 		// Move old file TODO add try catch
 		std::optional<std::filesystem::path> moved_path;
 		if (exists(path))
 		{
-			moved_path = path.parent_path() / (path.filename().generic_string() + ".fileshare_outdated");
+			moved_path = path.parent_path() / (path.filename().generic_wstring() + L".fileshare_outdated");
 			std::filesystem::rename(path, *moved_path);
 		}
 		else if (!path.parent_path().empty() && !exists(path.parent_path()))
@@ -163,12 +165,20 @@ namespace fileshare
 		{
 			Http http(auth_token);
 			std::ofstream downloaded_file(path, std::ios_base::out | std::ios_base::binary);
-			http.fetch_file(remote_domain + "/repos/file?path=" + encoded_path + "&repos=" + remote_repository,
-			                       downloaded_file);
+
+			std::ofstream test("test.txt");
+			test << path.generic_string() << std::endl;
+			test.close();
+
+			http.fetch_file(
+				remote_domain + "/repos/file?path=" + Url::encode_string(path.generic_wstring()) + "&repos=" + Url::encode_string(remote_repository),
+				downloaded_file);
 
 			downloaded_file.close();
 			last_write_time(path, file.get_last_write_time().to_filesystem_time());
-			std::filesystem::remove(*moved_path);
+			update_saved_state(file);
+			if (moved_path)
+				std::filesystem::remove(*moved_path);
 		}
 		catch (const std::exception&)
 		{
@@ -179,8 +189,6 @@ namespace fileshare
 				std::filesystem::rename(*moved_path, path);
 			throw;
 		}
-		
-		update_saved_state(file);
 	}
 
 	void RepositoryConfig::require_connection()
@@ -248,7 +256,7 @@ namespace fileshare
 
 					if (auth_token.empty())
 						throw std::runtime_error("Failed to retrieve credentials.");
-					save_config();
+
 					std::cout << "Successfully logged in !" << std::endl;
 
 					break;
@@ -302,44 +310,47 @@ namespace fileshare
 		return !auth_token.empty();
 	}
 
-	void RepositoryConfig::update_saved_state(const File& new_state)
+	void RepositoryConfig::update_saved_state(const File& new_state, bool erase)
 	{
 		const auto& path = new_state.get_path();
-		update_saved_state_dir(new_state, std::vector(path.begin(), path.end()), get_saved_state());
+		update_saved_state_dir(new_state, std::vector(path.begin(), path.end()), get_saved_state(), erase);
 	}
 
 	void RepositoryConfig::update_saved_state_dir(const File& new_state, const std::vector<std::filesystem::path>& path,
-	                                              Directory& dir)
+	                                              Directory& dir, bool erase)
 	{
 		if (path.size() == 1)
-			dir.replace_insert_file(new_state);
-		else if (auto start = path.begin(); const auto bellow = dir.find_directory(*start))
-			if (bellow)
-				update_saved_state_dir(new_state, std::vector(++start, path.end()), *bellow);
+		{
+			if (erase)
+				dir.delete_file(new_state.get_name());
 			else
-			{
-				auto& new_dir = dir.add_directory(*start);
-				update_saved_state_dir(new_state, std::vector(++start, path.end()), new_dir);
-			}
+				dir.replace_insert_file(new_state);
+			return;
+		}
+		auto start = path.begin();
+		if (const auto bellow = dir.find_directory(*start))
+			update_saved_state_dir(new_state, std::vector(++start, path.end()), *bellow, erase);
 		else
-			throw std::runtime_error(
-				"Failed to update saved state for file '" + new_state.get_path().generic_string() + "'");
+		{
+			auto& new_dir = dir.add_directory(*start);
+			update_saved_state_dir(new_state, std::vector(++start, path.end()), new_dir, erase);
+		}
 	}
 
 	void RepositoryConfig::init_saved_state()
 	{
-		const Directory local = Directory::from_path(config_path.parent_path(), nullptr);
+		const Directory local = Directory::from_path(config_dir_path.parent_path(), nullptr);
 		const Directory remote = fetch_repos_status();
 		saved_state = Directory::init_saved_state(local, remote, nullptr);
-		save_config();
 	}
 
 	void RepositoryConfig::receive_delete_file(const File& file)
 	{
-		throw std::runtime_error("niy");
+		std::filesystem::remove(file.get_path());
+		update_saved_state(file, true);
 	}
 
-	void RepositoryConfig::upload_file(const File& file) const
+	void RepositoryConfig::upload_file(const File& file)
 	{
 		if (!exists(file.get_path()))
 			throw std::runtime_error("The uploaded file does not exists");
@@ -349,33 +360,37 @@ namespace fileshare
 		int64_t total_size = file.get_file_size();
 		int64_t uploaded_size = 0;
 
-		std::ifstream file_read_stream(file.get_path());
+		std::ifstream file_read_stream(file.get_path(), std::ios_base::binary | std::ios_base::in);
 		std::optional<std::string> content_token;
-
+		
 		while (uploaded_size < total_size)
 		{
 			int64_t packet_size = std::min(PACKET_SIZE, total_size - uploaded_size);
 			const bool is_waiting_content_token = !content_token && packet_size != total_size;
 
 			Http http(auth_token);
-
+			
 			if (content_token)
 				http.add_header("content-token: " + *content_token);
 			else
 			{
-				http.add_header("content-name: " + file.get_name().generic_string());
+				http.add_header("content-name: " + Url::encode_string(file.get_name().generic_wstring()));
 				http.add_header("content-size: " + std::to_string(file.get_file_size()));
 				http.add_header("content-mimetype: " + mime::find(file.get_path()));
-				http.add_header("content-path: " + file.get_path().generic_string());
+				http.add_header("content-path: " + Url::encode_string(file.get_path().parent_path().generic_wstring()));
 				http.add_header("content-description:");
-				http.add_header("content-timestamp: " + std::to_string(file.get_last_write_time().milliseconds_since_epoch()));
+				http.add_header(
+					"content-timestamp: " + std::to_string(file.get_last_write_time().milliseconds_since_epoch()));
 			}
-			try {
-
-				const auto json = http.upload_file(remote_domain + "/repos/upload/file?repos=" + remote_repository, file_read_stream, packet_size);
-
+			try
+			{
+				const auto json = http.upload_file(remote_domain + "/repos/upload/file?repos=" + Url::encode_string(remote_repository),
+				                                   file_read_stream, packet_size);
+				
 				if (is_waiting_content_token && http.get_last_response() == 201)
 				{
+					if (!json.contains("content-token"))
+						throw std::runtime_error("Missing content-token in response, file transfer failed ! Received : " + json.dump());
 					content_token = json["content-token"];
 					uploaded_size += packet_size;
 				}
@@ -390,11 +405,14 @@ namespace fileshare
 						throw std::runtime_error(
 							"Upload interrupted too early : " + std::to_string(uploaded_size) + " of " + std::to_string(
 								total_size));
+
+					if (!json.contains("status") || json["status"] != "Finished" || !json.contains("file_id"))
+						throw std::runtime_error("Something went wrong during file upload process : " + json.dump());
+					update_saved_state(file);
 					return;
 				}
 				else
 					throw std::runtime_error("Unhandled http response : " + std::to_string(http.get_last_response()));
-
 			}
 			catch (const std::exception&)
 			{
@@ -405,6 +423,10 @@ namespace fileshare
 
 	void RepositoryConfig::send_delete_file(const File& file)
 	{
-		throw std::runtime_error("niy");
+		Http http(auth_token);
+		http.post_request(
+			remote_domain + "/repos/delete-file?repos=" + Url::encode_string(remote_repository) + "&path=" + Url::encode_string(
+				file.get_path().generic_wstring()));
+		update_saved_state(file, true);
 	}
 }
