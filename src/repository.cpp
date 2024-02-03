@@ -148,8 +148,7 @@ namespace fileshare
 		require_sync();
 
 		const auto encoded_path = Url::encode_url(path.generic_string());
-
-
+        
 		// Move old file TODO add try catch
 		std::optional<std::filesystem::path> moved_path;
 		if (exists(path))
@@ -342,21 +341,6 @@ namespace fileshare
 
 	void RepositoryConfig::upload_file(const File& file) const
 	{
-
-		Http http(auth_token);
-		http.add_header("content-name: " + file.get_name().generic_string());
-		http.add_header("content-size: " + std::to_string(file.get_file_size()));
-		http.add_header("content-mimetype: " + mime::find(file.get_path()));
-		http.add_header("content-path: " + file.get_path().generic_string());
-		http.add_header("content-description:");
-		http.add_header("content-timestamp: " + std::to_string(file.get_last_write_time().milliseconds_since_epoch()));
-
-		std::ifstream file_read_stream(file.get_path());
-		http.upload_file_ws(remote_domain + "/repos/upload/file?repos=" + remote_repository, file_read_stream);
-
-		/*
-
-
 		if (!exists(file.get_path()))
 			throw std::runtime_error("The uploaded file does not exists");
 
@@ -417,7 +401,6 @@ namespace fileshare
 				throw;
 			}
 		}
-		*/
 	}
 
 	void RepositoryConfig::send_delete_file(const File& file)

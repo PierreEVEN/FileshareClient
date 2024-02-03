@@ -101,7 +101,7 @@ namespace fileshare
 #if _WIN32
 					sprintf_s(buf, "%.2X", i);
 #else
-                    snprintf(buf, 3, "%.2X"); //syntax using snprintf For Linux
+                    snprintf(buf, 3, "%.2X", i); //syntax using snprintf For Linux
 #endif
 					escaped.append(buf);
 				}
