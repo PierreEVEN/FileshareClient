@@ -1,7 +1,6 @@
 #include "http.hpp"
-
-#include <iostream>
 #include <curl/curl.h>
+#include <format>
 
 namespace fileshare
 {
@@ -149,8 +148,9 @@ namespace fileshare
 		}
 	}
 	
-	nlohmann::json Http::upload_file(const std::string& url, std::istream& file, size_t uploaded_size)
+	nlohmann::json Http::upload_file_part(const std::string& url, std::istream& file, size_t uploaded_size)
     {
+		size_t crash_g = file.tellg();
 		headers.emplace_back("Content-Type:application/octet-stream");
 		const CurlBox curl = prepareRequest();
 
@@ -173,8 +173,7 @@ namespace fileshare
 		curl_easy_setopt(*curl, CURLOPT_POSTFIELDSIZE_LARGE, data.size());
 
         /* PERFORM */
-        size_t crash_g = file.tellg();
-		CURLcode result = curl_easy_perform(*curl);
+		const CURLcode result = curl_easy_perform(*curl);
         if (result != CURLE_OK)
             throw std::runtime_error("curl_easy_perform() failed: " + std::to_string(result) + "|" + std::string(curl_easy_strerror(result)));
 		curl_easy_getinfo(*curl, CURLINFO_RESPONSE_CODE, &last_response);
@@ -195,5 +194,11 @@ namespace fileshare
 		default:
 			throw HttpError(last_response);
 		}
+	}
+
+	const char* Http::HttpError::what() const noexcept
+	{
+		msg = std::format("Http error : {}", error_code);
+		return msg.c_str();
 	}
 }

@@ -2,35 +2,36 @@
 
 #include <fstream>
 #include <iostream>
+#include <csignal>
+#include <cstdlib>
+#include <curl/curl.h>
 
 #include "http.hpp"
 #include "url.hpp"
 #include "mime-db.hpp"
 
-#include <csignal>
-#include <cstdlib>
-
 #include "shell_utils.hpp"
 
-static bool interrupt = false;
+static int interrupt_cnt = 0;
 
 #if _WIN32
 #include <windows.h>
-
 BOOL WINAPI consoleHandler(DWORD signal)
 {
 	std::cout << "Waiting for task completion..." << std::endl;
-	interrupt = true;
+	interrupt_cnt += 1;
+	if (interrupt_cnt > 3)
+		exit(-1);
 	return TRUE;
 }
 #else
 #include <termios.h>
 #include <unistd.h>
-
-
 void sigint_handler(int s) {
 	std::cout << "Waiting for task completion..." << std::endl;
-	interrupt = true;
+	interrupt_cnt += 1;
+	if (interrupt_cnt > 3)
+		exit(-1);
 }
 #endif
 
@@ -384,7 +385,7 @@ namespace fileshare
 				http.add_header("content-token: " + *content_token);
 			else
 			{
-				http.add_header("content-name: " + Url::encode_string(file.get_name().generic_wstring()));
+				http.add_header("content-name: " + Url::encode_string(file.get_name()));
 				http.add_header("content-size: " + std::to_string(file.get_file_size()));
 				http.add_header("content-mimetype: " + mime::find(file.get_path()));
 				http.add_header("content-path: " + Url::encode_string(file.get_path().parent_path().generic_wstring()));
@@ -394,7 +395,7 @@ namespace fileshare
 			}
 			try
 			{
-				const auto json = http.upload_file(
+				const auto json = http.upload_file_part(
 					remote_domain + "/repos/upload/file?repos=" + Url::encode_string(remote_repository),
 					file_read_stream, packet_size);
 
@@ -426,9 +427,9 @@ namespace fileshare
 				else
 					throw std::runtime_error("Unhandled http response : " + std::to_string(http.get_last_response()));
 			}
-			catch (const std::exception&)
+			catch (const std::exception& e)
 			{
-				throw;
+				throw std::runtime_error(std::string("Failed to upload file : ") + e.what());
 			}
 		}
 	}
@@ -445,6 +446,6 @@ namespace fileshare
 
 	bool RepositoryConfig::is_interrupted()
 	{
-		return interrupt;
+		return interrupt_cnt != 0;
 	}
 }

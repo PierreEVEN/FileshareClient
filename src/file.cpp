@@ -1,15 +1,24 @@
 #include "file.hpp"
 
+#include <nlohmann/json.hpp>
+#include <chrono>
+
 #include "directory.hpp"
 #include "url.hpp"
 
 namespace fileshare
 {
 	File::File(const nlohmann::json& json, const Directory* parent) :
-		name(Url::decode_string(json["name"])),
-		last_write_time(json.contains("timestamp") ? json["timestamp"].get<int64_t>() : 0),
-		file_size(json.contains("size") ? json["size"].get<int64_t>() : 0)
+		name(Url::decode_string(json["name"]))
 	{
+		const auto js_timestamp = json.find("timestamp");
+		if (js_timestamp != json.end())
+			last_write_time = js_timestamp->get<int64_t>();
+
+		const auto js_file_size = json.find("timestamp");
+		if (js_file_size != json.end())
+			file_size = js_file_size->get<int64_t>();
+
 		if (parent && !parent->is_root())
 			path = parent->get_path() / name;
 		else
@@ -30,14 +39,15 @@ namespace fileshare
 	nlohmann::json File::serialize() const
 	{
 		nlohmann::json json;
-		json["name"] = Url::encode_string(name.generic_wstring());
-		json["timestamp"] = last_write_time;
+		json["name"] = Url::encode_string(name);
+		json["timestamp"] = last_write_time.milliseconds_since_epoch();
 		json["size"] = file_size;
 		return json;
 	}
 
 	FileTimeType::FileTimeType(const std::filesystem::file_time_type& time) :
-		file_time(std::chrono::time_point_cast<std::chrono::milliseconds>(std::chrono::clock_cast<std::chrono::system_clock>(time)).time_since_epoch().count())
+		file_time(std::chrono::time_point_cast<std::chrono::milliseconds>(
+			std::chrono::clock_cast<std::chrono::system_clock>(time)).time_since_epoch().count())
 	{
 	}
 

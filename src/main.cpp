@@ -1,6 +1,7 @@
-#include <codecvt>
 
-#include "application.hpp"
+#include <iostream>
+
+#include "diff.hpp"
 #include "option.hpp"
 #include "repository.hpp"
 #include "http.hpp"
@@ -33,7 +34,7 @@ std::ostream& human_readable_time(std::ostream& os, int64_t millis)
 template <typename R>
 R execute_with_auth(fileshare::RepositoryConfig& config, std::function<R()> lambda)
 {
-	fileshare::Directory repos_status(nullptr, "");
+	fileshare::Directory repos_status(nullptr, L"");
 	try
 	{
 		return lambda();
@@ -78,7 +79,7 @@ void load_options(int argc, char** argv)
 					cfg, [&] { return cfg.fetch_repos_status(); });
 
 				// Compare diff to saved state
-				const auto diff = fileshare::Directory::diff(local_hierarchy, saved_hierarchy, remote_hierarchy);
+				const auto diff = fileshare::measure_diff(local_hierarchy, saved_hierarchy, remote_hierarchy);
 
 				for (const auto& [left, right] : diff.get_conflicts())
 					std::wcout << left.operation_str() << " [X] " << right.operation_str() << " : " << left.get_file().
@@ -86,6 +87,8 @@ void load_options(int argc, char** argv)
 
 				for (const auto& change : diff.get_changes())
 					std::wcout << change.operation_str() << " : " << change.get_file().get_path().generic_wstring() << std::endl;
+				if (diff.get_changes().empty())
+					std::cout << "Up to date !" << std::endl;
 			}
 			catch (const std::exception& e)
 			{
@@ -129,7 +132,7 @@ void load_options(int argc, char** argv)
                             cfg, [&] { return cfg.fetch_repos_status(); });
 
                     // Compare diff to saved state
-                    const auto diffs = fileshare::Directory::diff(local_hierarchy, saved_hierarchy, remote_hierarchy);
+                    const auto diffs = fileshare::measure_diff(local_hierarchy, saved_hierarchy, remote_hierarchy);
 
                     fileshare::ProgressBar progress_bar(L"Sending local modifications to " + cfg.get_repository(), diffs.get_changes().size());
                     size_t i = 0;
@@ -209,7 +212,7 @@ void load_options(int argc, char** argv)
 					cfg, [&] { return cfg.fetch_repos_status(); });
 
 				// Compare diff to saved state
-				const auto diffs = fileshare::Directory::diff(local_hierarchy, saved_hierarchy, remote_hierarchy);
+				const auto diffs = fileshare::measure_diff(local_hierarchy, saved_hierarchy, remote_hierarchy);
                 fileshare::ProgressBar progress_bar(L"Sending local modifications to " + cfg.get_repository(), diffs.get_changes().size());
                 size_t i = 0;
 
@@ -218,32 +221,37 @@ void load_options(int argc, char** argv)
                     if (fileshare::RepositoryConfig::is_interrupted())
                         throw std::runtime_error("Stopped !");
 
-                    progress_bar.progress(++i, fileshare::Url::utf8_to_wstring(change.operation_str()) + L" " + change.get_file().get_path().generic_wstring());
-
+					bool updated = false;
                     switch (change.get_operation())
 					{
 					case fileshare::Diff::Operation::LocalRevert:
 						std::wcout << "The local file '" << change.get_file().get_path().generic_wstring() <<
 							"' is older than previous version. Would you like to keep this outdated version or replace it with the last version on the server ?"
 							<< std::endl;
+						updated = true;
 						break;
 
 					case fileshare::Diff::Operation::RemoteDelete:
                         cfg.receive_delete_file(change.get_file());
+						updated = true;
 						break;
 
 					case fileshare::Diff::Operation::RemoteRevert:
 						std::wcout << "The remote server contains the file '" << change.get_file().get_path().generic_wstring() <<
 							"' that is older than the last saved version. Would you like to retrieve it anyway or keep your local version ?"
 							<< std::endl;
+						updated = true;
 						break;
 
 					case fileshare::Diff::Operation::RemoteAdded:
 					case fileshare::Diff::Operation::RemoteNewer:
 						cfg.download_replace_file(change.get_file());
+						updated = true;
 						break;
 					default: break;
 					}
+					if (updated)
+						progress_bar.progress(++i, fileshare::Url::utf8_to_wstring(change.operation_str()) + L" " + change.get_file().get_path().generic_wstring());
 				}
 			}
 			catch (const std::exception& e)
@@ -279,7 +287,7 @@ void load_options(int argc, char** argv)
 					cfg, [&] { return cfg.fetch_repos_status(); });
 
 				// Compare diff to saved state
-				const auto diffs = fileshare::Directory::diff(local_hierarchy, saved_hierarchy, remote_hierarchy);
+				const auto diffs = fileshare::measure_diff(local_hierarchy, saved_hierarchy, remote_hierarchy);
                 fileshare::ProgressBar progress_bar(L"Sending local modifications to " + cfg.get_repository(), diffs.get_changes().size());
                 size_t i = 0;
 				for (const auto& change : diffs.get_changes())
@@ -287,32 +295,38 @@ void load_options(int argc, char** argv)
                     if (fileshare::RepositoryConfig::is_interrupted())
                         throw std::runtime_error("Stopped !");
 
-                    progress_bar.progress(++i, fileshare::Url::utf8_to_wstring(change.operation_str()) + L" " + change.get_file().get_path().generic_wstring());
+					bool updated = false;
 					switch (change.get_operation())
 					{
 					case fileshare::Diff::Operation::LocalNewer:
 					case fileshare::Diff::Operation::LocalAdded:
                             cfg.upload_file(change.get_file());
+							updated = true;
 						break;
 
 					case fileshare::Diff::Operation::LocalDelete:
                             cfg.send_delete_file(change.get_file());
+							updated = true;
 						break;
 
 					case fileshare::Diff::Operation::LocalRevert:
 						std::wcout << "The local file '" << change.get_file().get_path().generic_wstring() <<
 							"' is older than the last saved version."
 							<< std::endl;
+						updated = true;
 						break;
 
 					case fileshare::Diff::Operation::RemoteRevert:
 						std::wcout << "The remote server contains the file '" << change.get_file().get_path().generic_wstring() <<
 							"' that is older than the last saved version."
 							<< std::endl;
+						updated = true;
 						break;
 
 					default: break;
 					}
+					if (updated)
+						progress_bar.progress(++i, fileshare::Url::utf8_to_wstring(change.operation_str()) + L" " + change.get_file().get_path().generic_wstring());
 				}
 			}
 			catch (const std::exception& e)

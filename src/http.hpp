@@ -1,8 +1,6 @@
 #pragma once
 #include <string>
-#include <curl/curl.h>
 #include <nlohmann/json.hpp>
-#include <format>
 
 namespace fileshare
 {
@@ -15,7 +13,7 @@ namespace fileshare
 		[[nodiscard]] nlohmann::json fetch_json_data(const std::string& url);
 		nlohmann::json post_request(const std::string& url);
 		void fetch_file(const std::string& url, std::ostream& file);
-		nlohmann::json upload_file(const std::string& url, std::istream& file, size_t uploaded_size);
+		nlohmann::json upload_file_part(const std::string& url, std::istream& file, size_t uploaded_size);
 		[[nodiscard]] int get_last_response() const { return last_response; }
 
 		void set_payload(const std::string& in_payload)
@@ -34,11 +32,7 @@ namespace fileshare
 
 			[[nodiscard]] virtual int code() const noexcept { return error_code; }
 
-			[[nodiscard]] const char* what() const noexcept override
-			{
-                msg = std::format("Http error : {}", error_code);
-				return msg.c_str();
-			}
+			[[nodiscard]] const char* what() const noexcept override;
 
 		protected:
 			int error_code;
@@ -82,6 +76,7 @@ namespace fileshare
 		class CurlBox final
 		{
 		public:
+			typedef void CURL;
 			CurlBox();
 			CurlBox(CurlBox&&) = default;
 			~CurlBox();

@@ -18,7 +18,7 @@ file(GLOB_RECURSE SOURCES src/*.cpp src/*.hpp)
 
 add_executable(fileshare ${SOURCES})
 target_include_directories(fileshare PRIVATE src/)
-target_link_libraries(fileshare PRIVATE nlohmann_json::nlohmann_json CURL::libcurl)
+target_link_libraries(fileshare PRIVATE nlohmann_json::nlohmann_json CURL::libcurl "-static")
 
 if (WIN32)
 	target_compile_definitions(fileshare PRIVATE NOMINMAX)

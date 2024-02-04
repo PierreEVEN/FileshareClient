@@ -1,8 +1,6 @@
 #pragma once
 #include <filesystem>
-#include <chrono>
-#include <iostream>
-#include <nlohmann/json.hpp>
+#include <nlohmann/json_fwd.hpp>
 
 namespace fileshare
 {
@@ -30,20 +28,6 @@ namespace fileshare
 	};
 }
 
-template <>
-struct nlohmann::adl_serializer<fileshare::FileTimeType>
-{
-	static void to_json(json& j, const fileshare::FileTimeType& value)
-	{
-		j = value.file_time;
-	}
-
-	static void from_json(const json& j, fileshare::FileTimeType& value)
-	{
-		value.file_time = j.get<uint64_t>();
-	}
-};
-
 namespace fileshare
 {
 	class File
@@ -55,15 +39,15 @@ namespace fileshare
 
 		[[nodiscard]] const size_t& get_file_size() const { return file_size; }
 		[[nodiscard]] const std::filesystem::path& get_path() const { return path; }
-		[[nodiscard]] const std::filesystem::path& get_name() const { return name; }
+		[[nodiscard]] const std::wstring& get_name() const { return name; }
 		[[nodiscard]] const FileTimeType& get_last_write_time() const { return last_write_time; }
 
 		[[nodiscard]] nlohmann::json serialize() const;
 
 	private:
-		std::filesystem::path name;
+		std::wstring name;
 		std::filesystem::path path;
-		FileTimeType last_write_time;
-		size_t file_size;
+		FileTimeType last_write_time{0};
+		size_t file_size{0};
 	};
 }
