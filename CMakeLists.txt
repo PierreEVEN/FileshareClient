@@ -11,7 +11,7 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 find_package (Python COMPONENTS Interpreter Development)
 execute_process(COMMAND ${Python_EXECUTABLE} src/mime-setup.py)
 
- find_package(nlohmann_json CONFIG REQUIRED)
+find_package(nlohmann_json CONFIG REQUIRED)
 find_package(CURL REQUIRED)
 
 file(GLOB_RECURSE SOURCES src/*.cpp src/*.hpp)

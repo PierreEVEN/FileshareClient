@@ -9,11 +9,11 @@ namespace fileshare
 	class RepositoryConfig
 	{
 	public:
-		RepositoryConfig(const std::filesystem::path& config_file_path = ".fileshare");
+		RepositoryConfig(const std::filesystem::path& repos_root = "./");
 		~RepositoryConfig();
 
-		static std::optional<std::filesystem::path> search_config_file(const std::filesystem::path& path);
-		static std::filesystem::path search_config_file_or_error(const std::filesystem::path& path);
+		static std::optional<std::filesystem::path> search_repos_root(const std::filesystem::path& path);
+		static std::filesystem::path search_repos_root_or_error(const std::filesystem::path& path);
 		
 		[[nodiscard]] std::string get_full_url() const;
 		[[nodiscard]] const std::string& get_domain() const { return remote_domain; }
@@ -45,6 +45,10 @@ namespace fileshare
 		}
 
 		void update_saved_state(const File& new_state, bool erase = false);
+
+        static void force_stop();
+
+        static bool is_interrupted();
 
 	private:
 		static void update_saved_state_dir(const File& new_state, const std::vector<std::filesystem::path>& path, Directory& dir, bool erase);

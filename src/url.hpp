@@ -30,12 +30,12 @@ namespace fileshare
 			{
 				if (path_end == std::wstring::npos)
 				{
-					domain = encode_string(url);
+					domain = wstring_to_utf8(url);
 					path.clear();
 				}
 				else
 				{
-					domain = encode_string(url.substr(0, path_end));
+					domain = wstring_to_utf8(url.substr(0, path_end));
 					path.clear();
 				}
 			}
@@ -43,12 +43,12 @@ namespace fileshare
 			{
 				if (path_end == std::wstring::npos)
 				{
-					domain = encode_string(url.substr(0, domain_end));
+					domain = wstring_to_utf8(url.substr(0, domain_end));
 					path = url.substr(domain_end + 1);
 				}
 				else
 				{
-					domain = encode_string(url.substr(0, domain_end));
+					domain = wstring_to_utf8(url.substr(0, domain_end));
 					path = url.substr(domain_end + 1, path_end - domain_end - 1);
 				}
 			}
@@ -150,7 +150,11 @@ namespace fileshare
 #if _WIN32
 					sscanf_s(SRC.substr(i + 1, 2).c_str(), "%x", &decoded);
 #else
-					snscanf(SRC.substr(i + 1, 2).c_str(), "%x", &ii);
+                    char* end_ptr;
+                    const auto substring = SRC.substr(i + 1, 2);
+                    decoded = static_cast<CharT>(strtoul(substring.c_str(), &end_ptr, 10));
+                    if (end_ptr == substring.c_str())
+                        throw std::runtime_error("Failed to decode string : " + substring);
 #endif
 					ret.push_back(static_cast<char>(decoded));
 					i += 2;

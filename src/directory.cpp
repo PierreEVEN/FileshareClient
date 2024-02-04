@@ -3,6 +3,7 @@
 #include <fstream>
 
 #include "url.hpp"
+#include "repository.hpp"
 
 #if WIN32
 #include <io.h>
@@ -72,7 +73,10 @@ namespace fileshare
 
 	Directory Directory::from_json(const nlohmann::json& json, const Directory* parent)
 	{
-		if (!json.contains("name"))
+        if (RepositoryConfig::is_interrupted())
+            throw std::runtime_error("Stopped !");
+
+        if (!json.contains("name"))
 			throw std::runtime_error("Missing directory name in retrieved data");
 		Directory dir(parent, Url::decode_string(json["name"]));
 
@@ -94,6 +98,8 @@ namespace fileshare
 
 	Directory Directory::from_path(const std::filesystem::path& in_path, const Directory* parent)
 	{
+        if (RepositoryConfig::is_interrupted())
+            throw std::runtime_error("Stopped !");
 #if WIN32
 		_setmode(_fileno(stdout), _O_U16TEXT);
 #endif
@@ -157,6 +163,9 @@ namespace fileshare
 
 	DiffResult Directory::diff(const Directory& local, const Directory& saved_state, const Directory& remote)
 	{
+        if (RepositoryConfig::is_interrupted())
+            throw std::runtime_error("Stopped !");
+
 		DiffResult diffs;
 
 		// Check all local files with saved state
@@ -243,6 +252,9 @@ namespace fileshare
 
 	Directory Directory::init_saved_state(const Directory& local, const Directory& remote, const Directory* parent)
 	{
+        if (RepositoryConfig::is_interrupted())
+            throw std::runtime_error("Stopped !");
+
 		Directory result(parent, local.name);
 
 		for (const auto& local_file : local.files)

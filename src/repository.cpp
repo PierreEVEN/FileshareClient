@@ -2,24 +2,43 @@
 
 #include <fstream>
 #include <iostream>
-#include <sstream>
 
 #include "http.hpp"
 #include "url.hpp"
 #include "mime-db.hpp"
 
+#include <csignal>
+#include <cstdlib>
+#include <unistd.h>
+
+static bool interrupt = false;
+void sigint_handler(int s){
+    std::cout << "Waiting for task completion..." << std::endl;
+    interrupt = true;
+}
+
 #if _WIN32
 #include <windows.h>
 #else
 #include <termios.h>
-#include <unistd.h>
 #endif
 
 namespace fileshare
 {
-	RepositoryConfig::RepositoryConfig(const std::filesystem::path& config_file_path)
-		: config_dir_path(absolute(config_file_path))
+
+
+	RepositoryConfig::RepositoryConfig(const std::filesystem::path& repos_root)
+		: config_dir_path(absolute(repos_root / ".fileshare"))
 	{
+
+        struct sigaction sigIntHandler {};
+        sigIntHandler.sa_handler = sigint_handler;
+        sigemptyset(&sigIntHandler.sa_mask);
+        sigIntHandler.sa_flags = 0;
+        sigaction(SIGINT, &sigIntHandler, nullptr);
+
+
+        curl_global_init(CURL_GLOBAL_DEFAULT);
 		if (!exists(config_dir_path))
 			create_directories(config_dir_path);
 
@@ -52,6 +71,7 @@ namespace fileshare
 			auth_token = data["auth_token"];
 		if (data.contains("auth_token_exp"))
 			auth_token_exp = data["auth_token_exp"];
+        curl_global_cleanup();
 	}
 
 	RepositoryConfig::~RepositoryConfig()
@@ -86,24 +106,24 @@ namespace fileshare
 		}
 	}
 
-	std::optional<std::filesystem::path> RepositoryConfig::search_config_file(const std::filesystem::path& path)
+	std::optional<std::filesystem::path> RepositoryConfig::search_repos_root(const std::filesystem::path& path)
 	{
-		const auto abs_path = absolute(path);
+		auto abs_path = absolute(path);
 
 		for (const auto& file : std::filesystem::directory_iterator(abs_path))
 			if (file.is_directory() && file.path().filename() == ".fileshare")
-				return file;
+				return abs_path;
 
 		if (abs_path.has_parent_path() && abs_path.parent_path() != abs_path)
-			search_config_file(abs_path.parent_path());
+            search_repos_root(abs_path.parent_path());
 
 		return {};
 	}
 
-	std::filesystem::path RepositoryConfig::search_config_file_or_error(
+	std::filesystem::path RepositoryConfig::search_repos_root_or_error(
 		const std::filesystem::path& path)
 	{
-		if (const auto& file = search_config_file(path))
+		if (const auto& file = search_repos_root(path))
 			return *file;
 
 		throw std::runtime_error("Not a fileshare repository");
@@ -165,10 +185,6 @@ namespace fileshare
 		{
 			Http http(auth_token);
 			std::ofstream downloaded_file(path, std::ios_base::out | std::ios_base::binary);
-
-			std::ofstream test("test.txt");
-			test << path.generic_string() << std::endl;
-			test.close();
 
 			http.fetch_file(
 				remote_domain + "/repos/file?path=" + Url::encode_string(path.generic_wstring()) + "&repos=" + Url::encode_string(remote_repository),
@@ -363,7 +379,7 @@ namespace fileshare
 		std::ifstream file_read_stream(file.get_path(), std::ios_base::binary | std::ios_base::in);
 		std::optional<std::string> content_token;
 		
-		while (uploaded_size < total_size)
+		while (uploaded_size < total_size && !is_interrupted())
 		{
 			int64_t packet_size = std::min(PACKET_SIZE, total_size - uploaded_size);
 			const bool is_waiting_content_token = !content_token && packet_size != total_size;
@@ -429,4 +445,8 @@ namespace fileshare
 				file.get_path().generic_wstring()));
 		update_saved_state(file, true);
 	}
+
+    bool RepositoryConfig::is_interrupted() {
+        return interrupt;
+    }
 }

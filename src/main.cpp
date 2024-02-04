@@ -4,6 +4,8 @@
 #include "option.hpp"
 #include "repository.hpp"
 #include "http.hpp"
+#include "url.hpp"
+#include "shell_utils.hpp"
 
 std::ostream& human_readable_time(std::ostream& os, int64_t millis)
 {
@@ -58,8 +60,8 @@ void load_options(int argc, char** argv)
 		{
 			try
 			{
-				const auto cfg_file = fileshare::RepositoryConfig::search_config_file_or_error(
-					std::filesystem::current_path());
+				const auto cfg_file = fileshare::RepositoryConfig::search_repos_root_or_error(
+                        std::filesystem::current_path());
 
 				fileshare::RepositoryConfig cfg(cfg_file);
 
@@ -67,7 +69,7 @@ void load_options(int argc, char** argv)
 					cfg.require_connection();
 
 				// Get local, saved, and remote tree
-				const auto local_hierarchy = fileshare::Directory::from_path(cfg_file.parent_path(), nullptr);
+				const auto local_hierarchy = fileshare::Directory::from_path(cfg_file, nullptr);
 				const auto saved_hierarchy = execute_with_auth<fileshare::Directory>(cfg, [&]
 				{
 					return cfg.get_saved_state();
@@ -100,16 +102,62 @@ void load_options(int argc, char** argv)
 		{
 			try
 			{
-                std::wcout << "todo : create a new dir and don't clone here (also check if dir exists)" << std::endl;
-				if (fileshare::RepositoryConfig::search_config_file(std::filesystem::current_path()))
-					throw std::runtime_error("The current path is already a fileshare repository");
-				fileshare::RepositoryConfig cfg;
-				cfg.set_full_url(url[0]);
-				cfg.require_connection();
-				std::cout << "Cloned new fileshare repository : '" << cfg.get_full_url() << "'" << std::endl;
+                fileshare::Url parsed(url[0]);
+                if (const auto repos = parsed.get_option(L"repos")) {
+                    const std::wstring &repos_name = *repos;
+                    if (exists(std::filesystem::current_path() / repos_name))
+                        throw std::runtime_error(
+                                "A directory named " + fileshare::Url::wstring_to_utf8(repos_name) + " already exists");
+
+                    create_directories(std::filesystem::current_path() / repos_name);
+
+                    fileshare::RepositoryConfig cfg(std::filesystem::current_path() / repos_name);
+                    cfg.set_full_url(url[0]);
+                    cfg.require_connection();
+                    std::cout << "Cloned a new fileshare repository : '" << cfg.get_full_url() << "'" << std::endl;
+
+                    if (!cfg.is_connected())
+                        cfg.require_connection();
+
+                    // Get local, saved, and remote tree
+                    const auto local_hierarchy = fileshare::Directory::from_path(repos_name, nullptr);
+                    const auto saved_hierarchy = execute_with_auth<fileshare::Directory>(cfg, [&] {
+                        return cfg.get_saved_state();
+                    });
+                    const auto remote_hierarchy = execute_with_auth<fileshare::Directory>(
+                            cfg, [&] { return cfg.fetch_repos_status(); });
+
+                    // Compare diff to saved state
+                    const auto diffs = fileshare::Directory::diff(local_hierarchy, saved_hierarchy, remote_hierarchy);
+
+                    fileshare::ProgressBar progress_bar(L"Sending local modifications to " + cfg.get_repository(), diffs.get_changes().size());
+                    size_t i = 0;
+
+                    for (const auto &change: diffs.get_changes()) {
+                        if (fileshare::RepositoryConfig::is_interrupted())
+                            throw std::runtime_error("Stopped !");
+
+                        progress_bar.progress(++i, fileshare::Url::utf8_to_wstring(change.operation_str()) + L" " + change.get_file().get_path().generic_wstring());
+
+                        switch (change.get_operation()) {
+                            case fileshare::Diff::Operation::RemoteAdded:
+                                cfg.download_replace_file(change.get_file());
+                                break;
+                            default:
+                                throw std::runtime_error("This should never happen when cloning");
+                        }
+                    }
+                }
+                else
+                    throw std::runtime_error("URL is not a valid fileshare repository");
 			}
 			catch (const std::exception& e)
 			{
+                fileshare::Url parsed(url[0]);
+                if (const auto repos = parsed.get_option(L"repos")) {
+                    if (exists(std::filesystem::current_path() / *repos))
+                        remove(std::filesystem::current_path() / *repos);
+                }
 				std::cerr << e.what() << std::endl;
 			}
 		},
@@ -123,7 +171,7 @@ void load_options(int argc, char** argv)
 		{
 			try
 			{
-				if (fileshare::RepositoryConfig::search_config_file(std::filesystem::current_path()))
+				if (fileshare::RepositoryConfig::search_repos_root(std::filesystem::current_path()))
 					throw std::runtime_error("The current path is already a fileshare repository");
 				fileshare::RepositoryConfig cfg;
 			}
@@ -142,8 +190,8 @@ void load_options(int argc, char** argv)
 		{
 			try
 			{
-				const auto cfg_file = fileshare::RepositoryConfig::search_config_file_or_error(
-					std::filesystem::current_path());
+				const auto cfg_file = fileshare::RepositoryConfig::search_repos_root_or_error(
+                        std::filesystem::current_path());
 
 				fileshare::RepositoryConfig cfg(cfg_file);
 
@@ -151,7 +199,7 @@ void load_options(int argc, char** argv)
 					cfg.require_connection();
 
 				// Get local, saved, and remote tree
-				const auto local_hierarchy = fileshare::Directory::from_path(cfg_file.parent_path(), nullptr);
+				const auto local_hierarchy = fileshare::Directory::from_path(cfg_file, nullptr);
 				const auto saved_hierarchy = execute_with_auth<fileshare::Directory>(cfg, [&]
 				{
 					return cfg.get_saved_state();
@@ -161,35 +209,37 @@ void load_options(int argc, char** argv)
 
 				// Compare diff to saved state
 				const auto diffs = fileshare::Directory::diff(local_hierarchy, saved_hierarchy, remote_hierarchy);
-				for (const auto& change : diffs.get_changes())
+                fileshare::ProgressBar progress_bar(L"Sending local modifications to " + cfg.get_repository(), diffs.get_changes().size());
+                size_t i = 0;
+
+                for (const auto& change : diffs.get_changes())
 				{
-					switch (change.get_operation())
+                    if (fileshare::RepositoryConfig::is_interrupted())
+                        throw std::runtime_error("Stopped !");
+
+                    progress_bar.progress(++i, fileshare::Url::utf8_to_wstring(change.operation_str()) + L" " + change.get_file().get_path().generic_wstring());
+
+                    switch (change.get_operation())
 					{
 					case fileshare::Diff::Operation::LocalRevert:
 						std::wcout << "The local file '" << change.get_file().get_path().generic_wstring() <<
 							"' is older than previous version. Would you like to keep this outdated version or replace it with the last version on the server ?"
 							<< std::endl;
-					// Update local state to dismiss if needed
 						break;
 
 					case fileshare::Diff::Operation::RemoteDelete:
-						std::wcout << "Removing '" << change.get_file().get_path().generic_wstring() << "'" << std::endl;
                         cfg.receive_delete_file(change.get_file());
-					// Remove local file
 						break;
 
 					case fileshare::Diff::Operation::RemoteRevert:
 						std::wcout << "The remote server contains the file '" << change.get_file().get_path().generic_wstring() <<
 							"' that is older than the last saved version. Would you like to retrieve it anyway or keep your local version ?"
 							<< std::endl;
-					// Update local state to dismiss if needed
 						break;
 
 					case fileshare::Diff::Operation::RemoteAdded:
 					case fileshare::Diff::Operation::RemoteNewer:
-						std::wcout << "Updating '" << change.get_file().get_path().generic_wstring() << "'" << std::endl;
 						cfg.download_replace_file(change.get_file());
-					// Download from remote
 						break;
 					default: break;
 					}
@@ -206,12 +256,12 @@ void load_options(int argc, char** argv)
 
 	// Push
 	root.add_sub_command({
-		L"push", [&](auto)
+		L"push", [&](const std::vector<std::wstring>&)
 		{
 			try
 			{
-				const auto cfg_file = fileshare::RepositoryConfig::search_config_file_or_error(
-					std::filesystem::current_path());
+				const auto cfg_file = fileshare::RepositoryConfig::search_repos_root_or_error(
+                        std::filesystem::current_path());
 
 				fileshare::RepositoryConfig cfg(cfg_file);
 
@@ -219,7 +269,7 @@ void load_options(int argc, char** argv)
 					cfg.require_connection();
 
 				// Get local, saved, and remote tree
-				const auto local_hierarchy = fileshare::Directory::from_path(cfg_file.parent_path(), nullptr);
+				const auto local_hierarchy = fileshare::Directory::from_path(cfg_file, nullptr);
 				const auto saved_hierarchy = execute_with_auth<fileshare::Directory>(cfg, [&]
 				{
 					return cfg.get_saved_state();
@@ -229,36 +279,35 @@ void load_options(int argc, char** argv)
 
 				// Compare diff to saved state
 				const auto diffs = fileshare::Directory::diff(local_hierarchy, saved_hierarchy, remote_hierarchy);
+                fileshare::ProgressBar progress_bar(L"Sending local modifications to " + cfg.get_repository(), diffs.get_changes().size());
+                size_t i = 0;
 				for (const auto& change : diffs.get_changes())
 				{
+                    if (fileshare::RepositoryConfig::is_interrupted())
+                        throw std::runtime_error("Stopped !");
+
+                    progress_bar.progress(++i, fileshare::Url::utf8_to_wstring(change.operation_str()) + L" " + change.get_file().get_path().generic_wstring());
 					switch (change.get_operation())
 					{
 					case fileshare::Diff::Operation::LocalNewer:
 					case fileshare::Diff::Operation::LocalAdded:
-						std::wcout << "test : " << change.get_file().get_name() << std::endl;
-						std::wcout << "Sending '" << change.get_file().get_path().generic_wstring() << "'" << std::endl;
                             cfg.upload_file(change.get_file());
-					// Upload file
 						break;
 
 					case fileshare::Diff::Operation::LocalDelete:
-						std::wcout << "Removing '" << change.get_file().get_path().generic_wstring() << "'" << std::endl;
                             cfg.send_delete_file(change.get_file());
-					// Delete on remote
 						break;
 
 					case fileshare::Diff::Operation::LocalRevert:
 						std::wcout << "The local file '" << change.get_file().get_path().generic_wstring() <<
 							"' is older than the last saved version."
 							<< std::endl;
-					// Update local state to dismiss if needed
 						break;
 
 					case fileshare::Diff::Operation::RemoteRevert:
 						std::wcout << "The remote server contains the file '" << change.get_file().get_path().generic_wstring() <<
 							"' that is older than the last saved version."
 							<< std::endl;
-					// Update local state to dismiss if needed
 						break;
 
 					default: break;
@@ -280,8 +329,8 @@ void load_options(int argc, char** argv)
 		{
 			try
 			{
-				const auto cfg_file = fileshare::RepositoryConfig::search_config_file_or_error(
-					std::filesystem::current_path());
+				const auto cfg_file = fileshare::RepositoryConfig::search_repos_root_or_error(
+                        std::filesystem::current_path());
 
 				fileshare::RepositoryConfig cfg(cfg_file);
 			}
@@ -302,8 +351,8 @@ void load_options(int argc, char** argv)
 			{
 				try
 				{
-					const auto cfg_file = fileshare::RepositoryConfig::search_config_file_or_error(
-						std::filesystem::current_path());
+					const auto cfg_file = fileshare::RepositoryConfig::search_repos_root_or_error(
+                            std::filesystem::current_path());
 
 					fileshare::RepositoryConfig cfg(cfg_file);
 					cfg.set_full_url(url[0]);
@@ -322,8 +371,8 @@ void load_options(int argc, char** argv)
 			{
 				try
 				{
-					const auto cfg_file = fileshare::RepositoryConfig::search_config_file_or_error(
-						std::filesystem::current_path());
+					const auto cfg_file = fileshare::RepositoryConfig::search_repos_root_or_error(
+                            std::filesystem::current_path());
 					fileshare::RepositoryConfig cfg(cfg_file);
 					std::cout << cfg.get_full_url() << std::endl;
 				}
@@ -343,7 +392,6 @@ void load_options(int argc, char** argv)
 
 int main(int argc, char** argv)
 {
-    curl_global_init(CURL_GLOBAL_DEFAULT);
 	try
 	{
 		load_options(argc, argv);
@@ -352,5 +400,4 @@ int main(int argc, char** argv)
 	{
 		std::cerr << "Execution failed : " << e.what() << std::endl;
 	}
-    curl_global_cleanup();
 }
