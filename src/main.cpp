@@ -110,8 +110,9 @@ void load_options(int argc, char** argv)
                                 "A directory named " + fileshare::Url::wstring_to_utf8(repos_name) + " already exists");
 
                     create_directories(std::filesystem::current_path() / repos_name);
+                    std::filesystem::current_path(std::filesystem::current_path() / repos_name);
 
-                    fileshare::RepositoryConfig cfg(std::filesystem::current_path() / repos_name);
+                    fileshare::RepositoryConfig cfg(std::filesystem::current_path());
                     cfg.set_full_url(url[0]);
                     cfg.require_connection();
                     std::cout << "Cloned a new fileshare repository : '" << cfg.get_full_url() << "'" << std::endl;
@@ -120,7 +121,7 @@ void load_options(int argc, char** argv)
                         cfg.require_connection();
 
                     // Get local, saved, and remote tree
-                    const auto local_hierarchy = fileshare::Directory::from_path(repos_name, nullptr);
+                    const auto local_hierarchy = fileshare::Directory::from_path(".", nullptr);
                     const auto saved_hierarchy = execute_with_auth<fileshare::Directory>(cfg, [&] {
                         return cfg.get_saved_state();
                     });
@@ -153,12 +154,12 @@ void load_options(int argc, char** argv)
 			}
 			catch (const std::exception& e)
 			{
+                std::cerr << e.what() << std::endl;
                 fileshare::Url parsed(url[0]);
                 if (const auto repos = parsed.get_option(L"repos")) {
                     if (exists(std::filesystem::current_path() / *repos))
                         remove(std::filesystem::current_path() / *repos);
                 }
-				std::cerr << e.what() << std::endl;
 			}
 		},
 		{L"repository url"},
