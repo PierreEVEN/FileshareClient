@@ -57,6 +57,6 @@ fileshare::AppConfig::AppConfig(std::optional<std::filesystem::path> in_config_p
 	}
 
 	if (!load_config())
-		std::cout << "Cannot find existing fileshare configuration, creating a new one" << std::endl;
+		std::wcout << "Cannot find existing fileshare configuration, creating a new one" << std::endl;
 
 }

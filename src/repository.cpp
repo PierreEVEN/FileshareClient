@@ -9,36 +9,47 @@
 
 #include <csignal>
 #include <cstdlib>
-#include <unistd.h>
 
 static bool interrupt = false;
-void sigint_handler(int s){
-    std::cout << "Waiting for task completion..." << std::endl;
-    interrupt = true;
-}
 
 #if _WIN32
 #include <windows.h>
+
+BOOL WINAPI consoleHandler(DWORD signal)
+{
+	std::cout << "Waiting for task completion..." << std::endl;
+	interrupt = true;
+	return TRUE;
+}
 #else
 #include <termios.h>
+#include <unistd.h>
+
+
+void sigint_handler(int s) {
+	std::cout << "Waiting for task completion..." << std::endl;
+	interrupt = true;
+}
 #endif
 
 namespace fileshare
 {
-
-
 	RepositoryConfig::RepositoryConfig(const std::filesystem::path& repos_root)
 		: config_dir_path(absolute(repos_root / ".fileshare"))
 	{
-
+#if _WIN32
+		if (!SetConsoleCtrlHandler(consoleHandler, TRUE))
+			throw std::runtime_error("ERROR: Could not set control handler");
+#else
         struct sigaction sigIntHandler {};
         sigIntHandler.sa_handler = sigint_handler;
         sigemptyset(&sigIntHandler.sa_mask);
         sigIntHandler.sa_flags = 0;
         sigaction(SIGINT, &sigIntHandler, nullptr);
+#endif
 
 
-        curl_global_init(CURL_GLOBAL_DEFAULT);
+		curl_global_init(CURL_GLOBAL_DEFAULT);
 		if (!exists(config_dir_path))
 			create_directories(config_dir_path);
 
@@ -47,7 +58,7 @@ namespace fileshare
 
 		if (exists(config_tmp_path))
 			remove(config_tmp_path);
-		
+
 		std::ifstream cfg(config_path);
 
 		if (!cfg.is_open())
@@ -71,7 +82,7 @@ namespace fileshare
 			auth_token = data["auth_token"];
 		if (data.contains("auth_token_exp"))
 			auth_token_exp = data["auth_token_exp"];
-        curl_global_cleanup();
+		curl_global_cleanup();
 	}
 
 	RepositoryConfig::~RepositoryConfig()
@@ -97,7 +108,8 @@ namespace fileshare
 		if (exists(config_dir_path / "config.fileshare"))
 			remove(config_dir_path / "config.fileshare");
 		// Overwrite old config only if everything was successfull
-		try {
+		try
+		{
 			std::filesystem::rename(config_tmp_path, config_dir_path / "config.fileshare");
 		}
 		catch (const std::exception& e)
@@ -115,7 +127,7 @@ namespace fileshare
 				return abs_path;
 
 		if (abs_path.has_parent_path() && abs_path.parent_path() != abs_path)
-            search_repos_root(abs_path.parent_path());
+			search_repos_root(abs_path.parent_path());
 
 		return {};
 	}
@@ -134,8 +146,8 @@ namespace fileshare
 		if (remote_repository.empty())
 			throw std::runtime_error("The remote repos have not been set correctly");
 		return remote_domain + "/repos?repos=" + Url::encode_string(remote_repository) + (remote_directory.empty()
-			                                                              ? ":"
-			                                                              : "&directory=" + Url::encode_string(remote_directory));
+			? ":"
+			: "&directory=" + Url::encode_string(remote_directory));
 	}
 
 	void RepositoryConfig::set_full_url(const std::wstring& new_url)
@@ -155,7 +167,8 @@ namespace fileshare
 		{
 			Http http(auth_token);
 			return Directory::from_json(http.fetch_json_data(
-				                            remote_domain + "/repos/tree?repos=" + Url::encode_string(remote_repository) + (
+				                            remote_domain + "/repos/tree?repos=" + Url::encode_string(remote_repository)
+				                            + (
 					                            remote_directory.empty()
 						                            ? ""
 						                            : "&directory=" + Url::encode_string(remote_directory))), nullptr);
@@ -187,7 +200,8 @@ namespace fileshare
 			std::ofstream downloaded_file(path, std::ios_base::out | std::ios_base::binary);
 
 			http.fetch_file(
-				remote_domain + "/repos/file?path=" + Url::encode_string(path.generic_wstring()) + "&repos=" + Url::encode_string(remote_repository),
+				remote_domain + "/repos/file?path=" + Url::encode_string(path.generic_wstring()) + "&repos=" +
+				Url::encode_string(remote_repository),
 				downloaded_file);
 
 			downloaded_file.close();
@@ -378,14 +392,14 @@ namespace fileshare
 
 		std::ifstream file_read_stream(file.get_path(), std::ios_base::binary | std::ios_base::in);
 		std::optional<std::string> content_token;
-		
+
 		while (uploaded_size < total_size && !is_interrupted())
 		{
 			int64_t packet_size = std::min(PACKET_SIZE, total_size - uploaded_size);
 			const bool is_waiting_content_token = !content_token && packet_size != total_size;
 
 			Http http(auth_token);
-			
+
 			if (content_token)
 				http.add_header("content-token: " + *content_token);
 			else
@@ -400,13 +414,15 @@ namespace fileshare
 			}
 			try
 			{
-				const auto json = http.upload_file(remote_domain + "/repos/upload/file?repos=" + Url::encode_string(remote_repository),
-				                                   file_read_stream, packet_size);
-				
+				const auto json = http.upload_file(
+					remote_domain + "/repos/upload/file?repos=" + Url::encode_string(remote_repository),
+					file_read_stream, packet_size);
+
 				if (is_waiting_content_token && http.get_last_response() == 201)
 				{
 					if (!json.contains("content-token"))
-						throw std::runtime_error("Missing content-token in response, file transfer failed ! Received : " + json.dump());
+						throw std::runtime_error(
+							"Missing content-token in response, file transfer failed ! Received : " + json.dump());
 					content_token = json["content-token"];
 					uploaded_size += packet_size;
 				}
@@ -441,12 +457,14 @@ namespace fileshare
 	{
 		Http http(auth_token);
 		http.post_request(
-			remote_domain + "/repos/delete-file?repos=" + Url::encode_string(remote_repository) + "&path=" + Url::encode_string(
+			remote_domain + "/repos/delete-file?repos=" + Url::encode_string(remote_repository) + "&path=" +
+			Url::encode_string(
 				file.get_path().generic_wstring()));
 		update_saved_state(file, true);
 	}
 
-    bool RepositoryConfig::is_interrupted() {
-        return interrupt;
-    }
+	bool RepositoryConfig::is_interrupted()
+	{
+		return interrupt;
+	}
 }

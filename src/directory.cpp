@@ -98,11 +98,20 @@ namespace fileshare
 
 	Directory Directory::from_path(const std::filesystem::path& in_path, const Directory* parent)
 	{
-        if (RepositoryConfig::is_interrupted())
-            throw std::runtime_error("Stopped !");
 #if WIN32
 		_setmode(_fileno(stdout), _O_U16TEXT);
 #endif
+		const auto res = from_path_internal(in_path, parent);
+#if WIN32
+		_setmode(_fileno(stdout), _O_TEXT);
+#endif
+		return res;
+	}
+
+	Directory Directory::from_path_internal(const std::filesystem::path& in_path, const Directory* parent)
+	{
+        if (RepositoryConfig::is_interrupted())
+            throw std::runtime_error("Stopped !");
 
 		Directory dir(parent, in_path.filename());
 
@@ -132,7 +141,7 @@ namespace fileshare
 			}
 			else if (entry.is_directory())
 			{
-				const auto directory = from_path(entry.path(), &dir);
+				const auto directory = from_path_internal(entry.path(), &dir);
 				dir.directories.emplace_back(directory);
 			}
 		}

@@ -45,6 +45,8 @@ namespace fileshare {
         static void set_font_color(const Color& color);
         static void set_background_color(const Color& color);
         static void set_font_mode(const Font& font);
+        static void init();
+
     private:
 
         static void init_progress_bar(ProgressBar& pb);

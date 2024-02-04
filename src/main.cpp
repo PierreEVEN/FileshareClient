@@ -393,6 +393,7 @@ void load_options(int argc, char** argv)
 
 int main(int argc, char** argv)
 {
+	fileshare::ShellUtils::init();
 	try
 	{
 		load_options(argc, argv);

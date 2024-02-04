@@ -13,7 +13,7 @@ namespace fileshare
 		Http(const std::string& auth_token);
 
 		[[nodiscard]] nlohmann::json fetch_json_data(const std::string& url);
-		void post_request(const std::string& url);
+		nlohmann::json post_request(const std::string& url);
 		void fetch_file(const std::string& url, std::ostream& file);
 		nlohmann::json upload_file(const std::string& url, std::istream& file, size_t uploaded_size);
 		[[nodiscard]] int get_last_response() const { return last_response; }

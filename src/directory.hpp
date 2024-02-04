@@ -142,6 +142,7 @@ namespace fileshare
 		}
 
 	private:
+		static Directory from_path_internal(const std::filesystem::path& in_path, const Directory* parent);
 		bool is_root_dir;
 		std::filesystem::path name;
 		std::filesystem::path path;

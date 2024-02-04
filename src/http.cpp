@@ -81,7 +81,7 @@ namespace fileshare
 		}
 	}
 
-	void Http::post_request(const std::string& url)
+	nlohmann::json Http::post_request(const std::string& url)
 	{
 		const CurlBox curl = prepareRequest();
 		
@@ -89,6 +89,14 @@ namespace fileshare
 
 		curl_easy_setopt(*curl, CURLOPT_POST, 1L);
 		curl_easy_setopt(*curl, CURLOPT_POSTFIELDSIZE, 0);
+		std::string json_raw;
+		curl_easy_setopt(*curl, CURLOPT_WRITEFUNCTION,
+			static_cast<CURL_READWRITEFUNCTION_PTR>([](void* data, size_t size, size_t nmemb, void* ctx)
+				{
+					static_cast<std::string*>(ctx)->append(static_cast<char*>(data), size * nmemb);
+					return size * nmemb;
+				}));
+		curl_easy_setopt(*curl, CURLOPT_WRITEDATA, &json_raw);
 
 		curl_easy_perform(*curl);
 		curl_easy_getinfo(*curl, CURLINFO_RESPONSE_CODE, &last_response);
@@ -103,7 +111,7 @@ namespace fileshare
 		case 200:
 		case 201:
 		case 202:
-			return;
+			return json_raw;
 		default:
 			throw HttpError(last_response);
 		}
