@@ -159,9 +159,6 @@ namespace fileshare
 					ret.push_back(static_cast<char>(decoded));
 					i += 2;
 				}
-				else if (SRC[i] == '+') {
-					ret.push_back(' ');
-				}
 				else {
 					ret.push_back(SRC[i]);
 				}

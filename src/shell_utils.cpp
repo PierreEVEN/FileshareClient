@@ -292,4 +292,33 @@ namespace fileshare
 			default_console_colors = info.wAttributes;
 #endif
 	}
+
+	void ShellUtils::set_password_mode(bool enable)
+	{
+#if _WIN32
+		HANDLE hStdin = GetStdHandle(STD_INPUT_HANDLE);
+		DWORD mode = 0;
+		GetConsoleMode(hStdin, &mode);
+		if (enable) {
+			SetConsoleMode(hStdin, mode | ENABLE_ECHO_INPUT);
+		}
+		else
+		{
+			SetConsoleMode(hStdin, mode & ~ENABLE_ECHO_INPUT);			
+		}
+#else
+		termios oldt;
+		tcgetattr(STDIN_FILENO, &oldt);
+		termios newt = oldt;
+		if (enable) {
+			newt.c_lflag |= ECHO;
+			tcsetattr(STDIN_FILENO, TCSANOW, &newt);
+		}
+		else
+		{
+			newt.c_lflag &= ~ECHO;
+			tcsetattr(STDIN_FILENO, TCSANOW, &oldt);
+		}
+#endif
+	}
 }

@@ -10,6 +10,8 @@
 #include <csignal>
 #include <cstdlib>
 
+#include "shell_utils.hpp"
+
 static bool interrupt = false;
 
 #if _WIN32
@@ -234,38 +236,16 @@ namespace fileshare
 			int try_cnt = 1;
 			do
 			{
-#if _WIN32
-				HANDLE hStdin = GetStdHandle(STD_INPUT_HANDLE);
-				DWORD mode = 0;
-				GetConsoleMode(hStdin, &mode);
-				SetConsoleMode(hStdin, mode | ENABLE_ECHO_INPUT);
-#else
-				termios oldt;
-				tcgetattr(STDIN_FILENO, &oldt);
-				termios newt = oldt;
-				newt.c_lflag |= ECHO;
-				tcsetattr(STDIN_FILENO, TCSANOW, &newt);
-#endif
 				std::cout << "email/username : ";
 				std::string username;
 				getline(std::cin, username);
 
-#if _WIN32
-				SetConsoleMode(hStdin, mode & (~ENABLE_ECHO_INPUT));
-#else
-				newt.c_lflag &= ~ECHO;
-				tcsetattr(STDIN_FILENO, TCSANOW, &newt);
-#endif
 				std::cout << "password : ";
+				ShellUtils::set_password_mode(true);
 				std::string password;
 				getline(std::cin, password);
+				ShellUtils::set_password_mode(false);
 				std::cout << std::endl;
-
-#if _WIN32
-				SetConsoleMode(hStdin, mode);
-#else
-				tcsetattr(STDIN_FILENO, TCSANOW, &oldt);
-#endif
 
 				nlohmann::json json;
 				json["username"] = username;
