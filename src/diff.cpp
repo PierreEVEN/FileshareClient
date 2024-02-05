@@ -1,5 +1,8 @@
 #include "diff.hpp"
 
+#include <iostream>
+#include <ranges>
+
 #include "profiler.hpp"
 #include "repository.hpp"
 
@@ -29,37 +32,11 @@ namespace fileshare
 		return "O";
 	}
 
-	void DiffResult::append(const Diff&& diff)
-	{
-		const auto existing_diff = visited_paths.find(diff.get_file().get_path());
-		// conflict detected
-		if (existing_diff != visited_paths.end())
-		{
-			const auto& other = existing_diff->second;
-			bool is_a_conflict = true;
-			// If file was removed on both sides
-			if (
-				(diff.get_operation() == Diff::Operation::LocalDelete || diff.get_operation() ==
-					Diff::Operation::RemoteDelete) &&
-				(other.get_operation() == Diff::Operation::LocalDelete || other.get_operation() ==
-					Diff::Operation::RemoteDelete))
-				is_a_conflict = false;
-
-			if (is_a_conflict)
-				file_conflicts.emplace_back(other, diff);
-		}
-		else {
-			visited_paths.insert(std::pair(diff.get_file().get_path(), diff));
-			file_changes.emplace_back(diff);
-		}
-	}
-
-
 	DiffResult::DiffResult(const Directory& local, const Directory& saved_state, const Directory& remote)
 	{
 		if (RepositoryConfig::is_interrupted())
 			throw std::runtime_error("Stopped !");
-		
+
 		// Check all local files with saved state
 		for (const auto& local_file : local.get_files())
 		{
@@ -67,21 +44,21 @@ namespace fileshare
 			{
 				// Check for local updates
 				if (saved_file->get_last_write_time() > local_file.get_last_write_time())
-					append({ local_file, Diff::Operation::LocalRevert });
+					*this += Diff{local_file, Diff::Operation::LocalRevert};
 				else if (saved_file->get_last_write_time() < local_file.get_last_write_time())
-					append({ local_file, Diff::Operation::LocalNewer });
+					*this += Diff{local_file, Diff::Operation::LocalNewer};
 			}
 			else
 			{
 				// This local file is totally new
-				append({ local_file, Diff::Operation::LocalAdded });
+				*this += Diff{local_file, Diff::Operation::LocalAdded};
 			}
 		}
 
 		// Check for locally removed files
 		for (const auto& saved_file : saved_state.get_files())
 			if (!local.find_file(saved_file.get_name()))
-				append({ saved_file, Diff::Operation::LocalDelete });
+				*this += Diff{saved_file, Diff::Operation::LocalDelete};
 
 		// Compare all remote files with saved state
 		for (const auto& remote_file : remote.get_files())
@@ -90,21 +67,21 @@ namespace fileshare
 			{
 				// Check for remote updates
 				if (saved_file->get_last_write_time() > remote_file.get_last_write_time())
-					append({ remote_file, Diff::Operation::RemoteRevert });
+					*this += Diff{remote_file, Diff::Operation::RemoteRevert};
 				else if (saved_file->get_last_write_time() < remote_file.get_last_write_time())
-					append({ remote_file, Diff::Operation::RemoteNewer });
+					*this += Diff{remote_file, Diff::Operation::RemoteNewer};
 			}
 			else
 			{
 				// This remote file is totally new
-				append({ remote_file, Diff::Operation::RemoteAdded });
+				*this += Diff{remote_file, Diff::Operation::RemoteAdded};
 			}
 		}
 
 		// Check for remote removed files
 		for (const auto& saved_file : saved_state.get_files())
 			if (!remote.find_file(saved_file.get_name()))
-				append({ saved_file, Diff::Operation::RemoteDelete });
+				*this += Diff{saved_file, Diff::Operation::RemoteDelete};
 
 		// Go deeper in directory hierarchy
 		for (const auto& saved_dir : saved_state.get_directories())
@@ -116,48 +93,118 @@ namespace fileshare
 			if (found_local_dir && found_remote_dir)
 				*this += DiffResult(*found_local_dir, saved_dir, *found_remote_dir);
 
-			// Or local dir is deleted
+				// Or local dir is deleted
 			else if (!found_local_dir && found_remote_dir)
 				for (const auto& removed_file : found_remote_dir->get_files_recursive())
-					append({ removed_file, Diff::Operation::LocalDelete });
+					*this += Diff{removed_file, Diff::Operation::LocalDelete};
 
-			// Or remote dir is deleted
+				// Or remote dir is deleted
 			else if (found_local_dir && !found_remote_dir)
 				for (const auto& removed_file : found_local_dir->get_files_recursive())
-					append({ removed_file, Diff::Operation::RemoteDelete });
+					*this += Diff{removed_file, Diff::Operation::RemoteDelete};
 		}
 
 		// New directory added locally
 		for (const auto& local_dir : local.get_directories())
 			if (!saved_state.find_directory(local_dir.get_name()))
 				for (const auto& added_file : local_dir.get_files_recursive())
-					append({ added_file, Diff::Operation::LocalAdded });
+					*this += Diff{added_file, Diff::Operation::LocalAdded};
 
 		// New directory added on remote
 		for (const auto& remote_dir : remote.get_directories())
 			if (!saved_state.find_directory(remote_dir.get_name()))
 				for (const auto& added_file : remote_dir.get_files_recursive())
-					append({ added_file, Diff::Operation::RemoteAdded });
+					*this += Diff{added_file, Diff::Operation::RemoteAdded};
 	}
 
+	DiffResult& DiffResult::operator+=(const Diff& other)
+	{
+		const auto existing_diff = file_changes.find(other.get_file().get_path());
+		// conflict detected
+		if (existing_diff != file_changes.end())
+		{
+			std::optional<Diff> local;
+			std::optional<Diff> remote;
+
+			switch (other.get_operation())
+			{
+			case Diff::Operation::LocalAdded:
+			case Diff::Operation::LocalDelete:
+			case Diff::Operation::LocalRevert:
+			case Diff::Operation::LocalNewer:
+				local = other;
+				break;
+			default:
+				remote = other;
+			}
+			switch (existing_diff->second.get_operation())
+			{
+			case Diff::Operation::LocalAdded:
+			case Diff::Operation::LocalDelete:
+			case Diff::Operation::LocalRevert:
+			case Diff::Operation::LocalNewer:
+				if (local)
+					throw std::runtime_error("This conflict is not possible !!");
+				local = existing_diff->second;
+				break;
+			default:
+				if (remote)
+					throw std::runtime_error("This conflict is not possible !!");
+				remote = existing_diff->second;
+			}
+
+			file_changes.erase(existing_diff);
+
+			// If the file was added on both side but is the same : clear it from the conflicts
+			if (local->get_operation() == Diff::Operation::LocalAdded && remote->get_operation() ==
+				Diff::Operation::RemoteAdded)
+			{
+				if (local->get_file().get_last_write_time() == remote->get_file().get_last_write_time()) {
+					
+					return *this;
+				}
+				
+				if (local->get_file().get_last_write_time() > remote->get_file().get_last_write_time())
+					file_conflicts.emplace_back(Diff{ local->get_file() , Diff::Operation::LocalNewer}, *remote);
+				else
+					file_conflicts.emplace_back(*local, Diff{ remote->get_file() , Diff::Operation::RemoteNewer });
+				return *this;
+			}
+
+			file_conflicts.emplace_back(*local, *remote);
+		}
+		else
+		{
+			file_changes.insert(std::pair(other.get_file().get_path(), other));
+		}
+		return *this;
+	}
 
 	DiffResult& DiffResult::operator+=(const DiffResult& other)
 	{
-		for (const auto& path : other.visited_paths)
+		for (const auto& path : other.file_changes)
 		{
-			if (visited_paths.contains(path.first))
+			if (file_changes.contains(path.first))
 				throw std::runtime_error("Concatenation of same path in DiffResult");
-			visited_paths.insert(path);
+			file_changes.insert(path);
 		}
 		file_conflicts.insert(file_conflicts.begin(), other.file_conflicts.begin(), other.file_conflicts.end());
-		file_changes.insert(file_changes.begin(), other.file_changes.begin(), other.file_changes.end());
 
 		return *this;
+	}
+
+	std::vector<Diff> DiffResult::get_changes() const
+	{
+		std::vector<Diff> changes;
+		changes.reserve(file_changes.size());
+		for (const auto& val : file_changes | std::views::values)
+			changes.emplace_back(val);
+		return changes;
 	}
 
 	DiffResult measure_diff(const Directory& local, const Directory& saved_state, const Directory& remote)
 	{
 		MEASURE_DURATION(ComputeDiff, "Compute server delta");
-		return { local, saved_state, remote };
+		return {local, saved_state, remote};
 	}
 }

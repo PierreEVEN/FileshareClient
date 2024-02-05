@@ -85,6 +85,9 @@ namespace fileshare
 			auth_token = data["auth_token"];
 		if (data.contains("auth_token_exp"))
 			auth_token_exp = data["auth_token_exp"];
+		if (data.contains("editor"))
+			editor = Url::decode_string(data["editor"]);
+		
 		curl_global_cleanup();
 	}
 
@@ -96,6 +99,7 @@ namespace fileshare
 		json["remote_directory"] = Url::encode_string(remote_directory);
 		json["auth_token"] = auth_token;
 		json["auth_token_exp"] = auth_token_exp;
+		json["editor"] = Url::encode_string(editor);
 		if (saved_state)
 			json["saved_state"] = saved_state->serialize();
 

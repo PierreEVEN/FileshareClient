@@ -49,6 +49,9 @@ namespace fileshare
 
         static bool is_interrupted();
 
+		void set_editor(const std::wstring& new_editor) { editor = new_editor; }
+		[[nodiscard]] const std::wstring& get_editor() const { return editor; }
+
 	private:
 		static void update_saved_state_dir(const File& new_state, const std::vector<std::filesystem::path>& path, Directory& dir, bool erase);
 
@@ -59,6 +62,7 @@ namespace fileshare
 		std::wstring remote_repository;
 		std::wstring remote_directory;
 		std::string auth_token;
+		std::wstring editor = L"code --wait";
 		uint64_t auth_token_exp;
 		std::optional<Directory> saved_state;
 	};
