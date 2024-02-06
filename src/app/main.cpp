@@ -1,12 +1,12 @@
 #include <iostream>
 #include <fstream>
 
-#include "diff.hpp"
-#include "option.hpp"
-#include "repository.hpp"
-#include "http.hpp"
-#include "url.hpp"
-#include "shell_utils.hpp"
+#include "fileshare/diff.hpp"
+#include "app/option.hpp"
+#include "fileshare/repository.hpp"
+#include "fileshare/http.hpp"
+#include "fileshare/url.hpp"
+#include "fileshare/shell_utils.hpp"
 
 
 std::ostream& human_readable_time(std::ostream& os, int64_t millis)
@@ -32,6 +32,44 @@ std::ostream& human_readable_time(std::ostream& os, int64_t millis)
 	return os;
 };
 
+static void require_connection(fileshare::RepositoryConfig cfg)
+{
+	if (!cfg.is_connected())
+	{
+		std::cout << "You are not logged in. Please connect to your account first." << std::endl;
+
+		int try_cnt = 1;
+		do
+		{
+			std::cout << "email/username : ";
+			std::string username;
+			getline(std::cin, username);
+
+			std::cout << "password : ";
+			fileshare::ShellUtils::set_password_mode(true);
+			std::string password;
+			getline(std::cin, password);
+			fileshare::ShellUtils::set_password_mode(false);
+			std::cout << std::endl;
+
+			try
+			{
+				cfg.connect(fileshare::Url::utf8_to_wstring(username), fileshare::Url::utf8_to_wstring(password));
+				std::cout << "Successfully logged in !" << std::endl;
+				break;
+			}
+			catch (const std::runtime_error& error)
+			{
+				if (try_cnt++ < 3)
+					std::cerr << error.what() << " Please try again" << std::endl;
+				else
+					throw;
+			}
+		}
+		while (true);
+	}
+}
+
 template <typename R>
 R execute_with_auth(fileshare::RepositoryConfig& config, std::function<R()> lambda)
 {
@@ -44,7 +82,7 @@ R execute_with_auth(fileshare::RepositoryConfig& config, std::function<R()> lamb
 	{
 		if (!config.is_connected())
 		{
-			config.require_connection();
+			require_connection(config);
 
 			return lambda();
 		}
@@ -69,10 +107,16 @@ void merge_conflicts(fileshare::DiffResult& diff, fileshare::RepositoryConfig& c
 			{
 			case fileshare::Diff::Operation::RemoteAdded:
 				// File was added on both sides
-				std::cerr << "The file " << local.get_file().get_path() <<
-					" was added on both side. Please select the one you prefer" << std::endl;
-				std::cin >> side;
-				throw std::runtime_error("not handled yet");
+				if (remote.get_file().get_last_write_time() == local.get_file().get_last_write_time())
+				// If timestamp are the same, it should be the same file : AUTO-MERGE
+					cfg.update_saved_state(remote.get_file());
+				else
+				{
+					std::cerr << "The file " << local.get_file().get_path() <<
+						" was added on both side. Please select the one you prefer" << std::endl;
+					std::cin >> side;
+					throw std::runtime_error("not handled yet");
+				}
 				break;
 			case fileshare::Diff::Operation::RemoteDelete:
 				// File was deleted on remote but added locally : AUTO-MERGE
@@ -99,8 +143,7 @@ void merge_conflicts(fileshare::DiffResult& diff, fileshare::RepositoryConfig& c
 				diff += remote;
 				break;
 			case fileshare::Diff::Operation::RemoteDelete:
-				// File was deleted one remote but added locally : AUTO-MERGE
-				diff += remote;
+				// File was deleted on both sides : AUTO-MERGE
 				cfg.update_saved_state(remote.get_file(), true);
 				break;
 			case fileshare::Diff::Operation::RemoteNewer:
@@ -192,7 +235,8 @@ std::filesystem::path tmp_file(const std::string& name)
 	do
 	{
 		path = std::filesystem::temp_directory_path() / (std::to_string(id++) + name);
-	} while (exists(path));
+	}
+	while (exists(path));
 	return path;
 }
 
@@ -213,7 +257,7 @@ void load_options(int argc, char** argv)
 				fileshare::RepositoryConfig cfg(cfg_file);
 
 				if (!cfg.is_connected())
-					cfg.require_connection();
+					require_connection(cfg);
 
 				// Get local, saved, and remote tree
 				const auto local_hierarchy = fileshare::Directory::from_path(cfg_file, nullptr);
@@ -233,17 +277,23 @@ void load_options(int argc, char** argv)
 					std::wofstream tmp_stream(tmp_path);
 					for (const auto& [left, right] : diff.get_conflicts())
 						tmp_stream << left.operation_str() << " [X] " << right.operation_str() << " : " << left.
-						get_file().
-						get_path().generic_wstring() << std::endl;
+							get_file().
+							get_path().generic_wstring() << std::endl;
 					tmp_stream.close();
 
-					const auto cmd = fileshare::Url::wstring_to_utf8(cfg.get_editor()) + " \"" + tmp_path.generic_string() + "\"";
+					const auto cmd = fileshare::Url::wstring_to_utf8(cfg.get_editor()) + " \"" + tmp_path.
+						generic_string() + "\"";
 
-					try {
+					try
+					{
 						system(cmd.c_str());
 					}
-					catch (const std::exception& e) {
-						throw std::runtime_error(std::string("Failed to open editor, you can set a different editor with `fileshare set-editor <editor>` : ") + e.what());
+					catch (const std::exception& e)
+					{
+						throw std::runtime_error(
+							std::string(
+								"Failed to open editor, you can set a different editor with `fileshare set-editor <editor>` : ")
+							+ e.what());
 					}
 				}
 				else
@@ -259,24 +309,32 @@ void load_options(int argc, char** argv)
 					const auto tmp_path = tmp_file("Modifications-detected.txt");
 					std::wofstream tmp_stream(tmp_path);
 					for (const auto& change : diff.get_changes())
-						tmp_stream << change.operation_str() << " : " << change.get_file().get_path().generic_wstring() <<
-						std::endl;
+						tmp_stream << change.operation_str() << " : " << change.get_file().get_path().generic_wstring()
+							<<
+							std::endl;
 					tmp_stream.close();
 
-					const auto cmd = fileshare::Url::wstring_to_utf8(cfg.get_editor()) + " \"" + tmp_path.generic_string() + "\"";
+					const auto cmd = fileshare::Url::wstring_to_utf8(cfg.get_editor()) + " \"" + tmp_path.
+						generic_string() + "\"";
 
-					try {
+					try
+					{
 						system(cmd.c_str());
 					}
-					catch (const std::exception& e) {
-						throw std::runtime_error(std::string("Failed to open editor, you can set a different editor with `fileshare set-editor <editor>` : ") + e.what());
+					catch (const std::exception& e)
+					{
+						throw std::runtime_error(
+							std::string(
+								"Failed to open editor, you can set a different editor with `fileshare set-editor <editor>` : ")
+							+ e.what());
 					}
 				}
 				else
 				{
 					for (const auto& change : diff.get_changes())
-						std::wcout << change.operation_str() << " : " << change.get_file().get_path().generic_wstring() <<
-						std::endl;
+						std::wcout << change.operation_str() << " : " << change.get_file().get_path().generic_wstring()
+							<<
+							std::endl;
 				}
 
 				if (diff.get_changes().empty() && diff.get_conflicts().empty())
@@ -310,11 +368,11 @@ void load_options(int argc, char** argv)
 
 					fileshare::RepositoryConfig cfg(std::filesystem::current_path());
 					cfg.set_full_url(url[0]);
-					cfg.require_connection();
+					require_connection(cfg);
 					std::cout << "Cloned a new fileshare repository : '" << cfg.get_full_url() << "'" << std::endl;
 
 					if (!cfg.is_connected())
-						cfg.require_connection();
+						require_connection(cfg);
 
 					// Get local, saved, and remote tree
 					const auto local_hierarchy = fileshare::Directory::from_path(".", nullptr);
@@ -388,7 +446,7 @@ void load_options(int argc, char** argv)
 		},
 		{L"text editor app"},
 		L"Set the default application to edit files."
-		});
+	});
 
 
 	// Init
@@ -422,7 +480,7 @@ void load_options(int argc, char** argv)
 				fileshare::RepositoryConfig cfg(cfg_file);
 
 				if (!cfg.is_connected())
-					cfg.require_connection();
+					require_connection(cfg);
 
 				// Get local, saved, and remote tree
 				const auto local_hierarchy = fileshare::Directory::from_path(cfg_file, nullptr);
@@ -503,7 +561,7 @@ void load_options(int argc, char** argv)
 				fileshare::RepositoryConfig cfg(cfg_file);
 
 				if (!cfg.is_connected())
-					cfg.require_connection();
+					require_connection(cfg);
 
 				// Get local, saved, and remote tree
 				const auto local_hierarchy = fileshare::Directory::from_path(cfg_file, nullptr);

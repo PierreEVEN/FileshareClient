@@ -1,7 +1,8 @@
 build/
-**.fileshare
-test_dev_repo/
 cmake-build-debug/
 cmake-build-release/
 .idea/
-src/mime-db.hpp
+
+**.fileshare
+
+include/fileshare/mime-db.hpp

@@ -73,7 +73,7 @@ namespace fileshare
 			directories.emplace_back(this, new_dir_name);
 			return directories.back();
 		}
-
+		
 		[[nodiscard]] const std::vector<File>& get_files() const { return files; }
 		[[nodiscard]] const std::vector<Directory>& get_directories() const { return directories; }
 		[[nodiscard]] const std::wstring& get_name() const { return name; }

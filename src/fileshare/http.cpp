@@ -1,6 +1,7 @@
-#include "http.hpp"
+#include "fileshare/http.hpp"
 #include <curl/curl.h>
 #include <format>
+#include <iostream>
 
 namespace fileshare
 {

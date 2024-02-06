@@ -18,7 +18,7 @@ for attr, value in data.items():
             else:
                 ext_dict[ext] = [attr]
 
-f = open(Path(__file__).parent.absolute() / "mime-db.hpp", "w")
+f = open(Path(__file__).parent.absolute() / "include" / "fileshare" / "mime-db.hpp", "w")
 f.write("#pragma once\n\n")
 f.write("#include <filesystem>\n")
 f.write("#include <string>\n")

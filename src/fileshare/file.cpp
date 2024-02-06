@@ -1,10 +1,10 @@
-#include "file.hpp"
+#include "fileshare/file.hpp"
 
 #include <nlohmann/json.hpp>
 #include <chrono>
 
-#include "directory.hpp"
-#include "url.hpp"
+#include "fileshare/directory.hpp"
+#include "fileshare/url.hpp"
 
 namespace fileshare
 {

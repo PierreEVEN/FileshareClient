@@ -1,12 +1,12 @@
-#include "directory.hpp"
+#include "fileshare/directory.hpp"
 
 #include <fstream>
 #include <unordered_set>
 #include <nlohmann/json.hpp>
 
-#include "profiler.hpp"
-#include "url.hpp"
-#include "repository.hpp"
+#include "fileshare/profiler.hpp"
+#include "fileshare/url.hpp"
+#include "fileshare/repository.hpp"
 
 #if WIN32
 #include <io.h>
@@ -98,8 +98,6 @@ namespace fileshare
 				continue;
 			if (entry.is_regular_file())
 			{
-				if (entry.file_size() == 0)
-					continue;
 				dir.files.emplace_back(File{ entry, &dir });
 			}
 			else if (entry.is_directory())

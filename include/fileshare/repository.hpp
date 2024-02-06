@@ -27,7 +27,8 @@ namespace fileshare
         void upload_file(const File& file);
         void send_delete_file(const File& file);
 
-		void require_connection();
+		void connect(const std::wstring& username, const std::wstring& password);
+		void logout();
 
 		[[nodiscard]] uint64_t get_server_time() const;
 		[[nodiscard]] std::filesystem::path get_path() const { return config_dir_path; }

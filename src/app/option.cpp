@@ -1,11 +1,10 @@
-#include "option.hpp"
+#include "app/option.hpp"
 
-#include <codecvt>
 #include <iostream>
 #include <locale>
 #include <stdexcept>
 #include <utility>
-#include "url.hpp"
+#include "fileshare/url.hpp"
 
 namespace fileshare
 {

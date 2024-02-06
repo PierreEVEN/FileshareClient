@@ -1,10 +1,10 @@
-#include "diff.hpp"
+#include "fileshare/diff.hpp"
 
 #include <iostream>
 #include <ranges>
 
-#include "profiler.hpp"
-#include "repository.hpp"
+#include "fileshare/profiler.hpp"
+#include "fileshare/repository.hpp"
 
 namespace fileshare
 {
@@ -115,6 +115,15 @@ namespace fileshare
 			if (!saved_state.find_directory(remote_dir.get_name()))
 				for (const auto& added_file : remote_dir.get_files_recursive())
 					*this += Diff{added_file, Diff::Operation::RemoteAdded};
+
+		// Check for directories deleted on both sides
+		for (const auto& saved_dir : saved_state.get_directories())
+			if (!local.find_directory(saved_dir.get_name()) && !remote.find_directory(saved_dir.get_name()))
+				for (const auto& removed_file : saved_dir.get_files_recursive())
+				{
+					*this += Diff{removed_file, Diff::Operation::LocalDelete};
+					*this += Diff{removed_file, Diff::Operation::RemoteDelete};
+				}
 	}
 
 	DiffResult& DiffResult::operator+=(const Diff& other)
@@ -144,12 +153,20 @@ namespace fileshare
 			case Diff::Operation::LocalRevert:
 			case Diff::Operation::LocalNewer:
 				if (local)
-					throw std::runtime_error("This conflict is not possible !!");
+					throw std::runtime_error(
+						"This conflict is not possible !!\n- Previous local " + std::string(local->operation_str()) +
+						" : " + local->get_file().get_path().generic_string() + "\n- New local " +
+						std::string(existing_diff->second.operation_str()) + " : " + existing_diff->second.get_file().
+						get_path().generic_string());
 				local = existing_diff->second;
 				break;
 			default:
 				if (remote)
-					throw std::runtime_error("This conflict is not possible !!");
+					throw std::runtime_error(
+						"This conflict is not possible !!\n- Previous local " + std::string(remote->operation_str()) +
+						" : " + remote->get_file().get_path().generic_string() + "\n- New local " +
+						std::string(existing_diff->second.operation_str()) + " : " + existing_diff->second.get_file().
+						get_path().generic_string());
 				remote = existing_diff->second;
 			}
 
@@ -159,15 +176,16 @@ namespace fileshare
 			if (local->get_operation() == Diff::Operation::LocalAdded && remote->get_operation() ==
 				Diff::Operation::RemoteAdded)
 			{
-				if (local->get_file().get_last_write_time() == remote->get_file().get_last_write_time()) {
-					
+				if (local->get_file().get_last_write_time() == remote->get_file().get_last_write_time())
+				{
+					file_conflicts.emplace_back(*local, *remote);
 					return *this;
 				}
-				
+
 				if (local->get_file().get_last_write_time() > remote->get_file().get_last_write_time())
-					file_conflicts.emplace_back(Diff{ local->get_file() , Diff::Operation::LocalNewer}, *remote);
+					file_conflicts.emplace_back(Diff{local->get_file(), Diff::Operation::LocalNewer}, *remote);
 				else
-					file_conflicts.emplace_back(*local, Diff{ remote->get_file() , Diff::Operation::RemoteNewer });
+					file_conflicts.emplace_back(*local, Diff{remote->get_file(), Diff::Operation::RemoteNewer});
 				return *this;
 			}
 

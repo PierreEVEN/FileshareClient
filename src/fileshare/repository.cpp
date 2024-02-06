@@ -1,4 +1,4 @@
-#include "repository.hpp"
+#include "fileshare/repository.hpp"
 
 #include <fstream>
 #include <iostream>
@@ -6,11 +6,12 @@
 #include <cstdlib>
 #include <curl/curl.h>
 
-#include "http.hpp"
-#include "url.hpp"
-#include "mime-db.hpp"
+#include "fileshare/exceptions.hpp"
+#include "fileshare/http.hpp"
+#include "fileshare/url.hpp"
+#include "fileshare/mime-db.hpp"
 
-#include "shell_utils.hpp"
+#include "fileshare/shell_utils.hpp"
 
 static int interrupt_cnt = 0;
 
@@ -40,6 +41,7 @@ namespace fileshare
 	RepositoryConfig::RepositoryConfig(const std::filesystem::path& repos_root)
 		: config_dir_path(absolute(repos_root / ".fileshare"))
 	{
+		current_path(repos_root);
 #if _WIN32
 		if (!SetConsoleCtrlHandler(consoleHandler, TRUE))
 			throw std::runtime_error("ERROR: Could not set control handler");
@@ -153,14 +155,14 @@ namespace fileshare
 		if (remote_repository.empty())
 			throw std::runtime_error("The remote repos have not been set correctly");
 		return remote_domain + "/repos?repos=" + Url::encode_string(remote_repository) + (remote_directory.empty()
-			? ":"
+			? ""
 			: "&directory=" + Url::encode_string(remote_directory));
 	}
 
 	void RepositoryConfig::set_full_url(const std::wstring& new_url)
 	{
 		const Url url(new_url);
-		remote_domain = url.get_domain();
+		remote_domain = (url.is_https() ? "https://" : "http://") + url.get_domain();
 		remote_repository = url.get_option(L"repos") ? *url.get_option(L"repos") : L"";
 		remote_directory = url.get_option(L"directory") ? *url.get_option(L"directory") : L"";
 		saved_state = {};
@@ -225,70 +227,6 @@ namespace fileshare
 			if (moved_path)
 				std::filesystem::rename(*moved_path, path);
 			throw;
-		}
-	}
-
-	void RepositoryConfig::require_connection()
-	{
-		if (remote_domain.empty() || remote_repository.empty())
-			throw std::runtime_error(
-				"The remote url is not configured. Please update it with 'fileshare remote set <remote>'");
-
-		if (auth_token.empty())
-		{
-			std::cout << "You are not logged in. Please connect to your account first." << std::endl;
-
-			int try_cnt = 1;
-			do
-			{
-				std::cout << "email/username : ";
-				std::string username;
-				getline(std::cin, username);
-
-				std::cout << "password : ";
-				ShellUtils::set_password_mode(true);
-				std::string password;
-				getline(std::cin, password);
-				ShellUtils::set_password_mode(false);
-				std::cout << std::endl;
-
-				nlohmann::json json;
-				json["username"] = username;
-				json["password"] = password;
-
-				Http http;
-				http.set_payload(json.dump());
-
-				try
-				{
-					nlohmann::json token_json = http.fetch_json_data(remote_domain + "/auth/gen-token");
-					if (!token_json.contains("token"))
-						throw std::runtime_error("Missing token in response");
-					auth_token = token_json["token"];
-					if (!token_json.contains("expiration_date"))
-						throw std::runtime_error("Missing token expiration date in response");
-					auth_token_exp = token_json["expiration_date"];
-
-					if (auth_token.empty())
-						throw std::runtime_error("Failed to retrieve credentials.");
-
-					std::cout << "Successfully logged in !" << std::endl;
-
-					break;
-				}
-				catch (const Http::HttpError& error)
-				{
-					if (error.code() == 404)
-						throw std::runtime_error("Cannot connect to server : 404 Not Found !");
-					if (error.code() == 401)
-					{
-						std::cerr << "Invalid credentials. Please try again or create a new account." << std::endl;
-						continue;
-					}
-					throw std::runtime_error("Cannot connect to server : " + std::to_string(error.code()));
-				}
-			}
-			while (try_cnt++ < 3);
 		}
 	}
 
@@ -368,17 +306,17 @@ namespace fileshare
 	void RepositoryConfig::upload_file(const File& file)
 	{
 		if (!exists(file.get_path()))
-			throw std::runtime_error("The uploaded file does not exists");
+			throw std::runtime_error("The uploaded file does not exists : " + file.get_path().generic_string());
 
 		constexpr int64_t PACKET_SIZE = 20 * 1024 * 1024;
 
-		int64_t total_size = file.get_file_size();
+		const int64_t total_size = file.get_file_size();
 		int64_t uploaded_size = 0;
 
 		std::ifstream file_read_stream(file.get_path(), std::ios_base::binary | std::ios_base::in);
 		std::optional<std::string> content_token;
 
-		while (uploaded_size < total_size && !is_interrupted())
+		while ((uploaded_size < total_size && !is_interrupted()) || total_size == 0)
 		{
 			int64_t packet_size = std::min(PACKET_SIZE, total_size - uploaded_size);
 			const bool is_waiting_content_token = !content_token && packet_size != total_size;
@@ -446,6 +384,43 @@ namespace fileshare
 			Url::encode_string(
 				file.get_path().generic_wstring()));
 		update_saved_state(file, true);
+	}
+
+	void RepositoryConfig::connect(const std::wstring& username, const std::wstring& password)
+	{
+		nlohmann::json json;
+		json["username"] = Url::encode_string(username);
+		json["password"] = Url::encode_string(password);
+
+		Http http;
+		http.set_payload(json.dump());
+
+		try
+		{
+			nlohmann::json token_json = http.fetch_json_data(remote_domain + "/auth/gen-token");
+			if (!token_json.contains("token"))
+				throw BadRequest("Missing token in response");
+			auth_token = token_json["token"];
+			if (!token_json.contains("expiration_date"))
+				throw BadRequest("Missing token expiration date in response");
+			auth_token_exp = token_json["expiration_date"];
+			if (auth_token.empty())
+				throw BadRequest("Failed to retrieve credentials.");
+		}
+		catch (const Http::HttpError& error)
+		{
+			if (error.code() == 404)
+				throw std::runtime_error("Cannot connect to server : 404 Not Found !");
+			if (error.code() == 401)
+				throw WrongCredentialsException("Login");
+			throw std::runtime_error("Cannot connect to server : " + std::to_string(error.code()));
+		}
+	}
+
+	void RepositoryConfig::logout()
+	{
+		auth_token = "";
+		auth_token_exp = 0;
 	}
 
 	bool RepositoryConfig::is_interrupted()
