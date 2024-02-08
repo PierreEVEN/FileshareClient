@@ -8,8 +8,8 @@
 #else
 #include <sys/ioctl.h>
 #include <cstdio>
-#include <unistd.h>
 #include <termios.h>
+#include <unistd.h>
 #endif
 
 namespace fileshare
@@ -308,18 +308,13 @@ namespace fileshare
 			SetConsoleMode(hStdin, mode & ~ENABLE_ECHO_INPUT);			
 		}
 #else
-		termios oldt;
-		tcgetattr(STDIN_FILENO, &oldt);
-		termios newt = oldt;
-		if (enable) {
-			newt.c_lflag |= ECHO;
-			tcsetattr(STDIN_FILENO, TCSANOW, &newt);
-		}
+        termios tty {};
+        tcgetattr(STDIN_FILENO, &tty);
+		if (enable)
+            tty.c_lflag &= ~ECHO;
 		else
-		{
-			newt.c_lflag &= ~ECHO;
-			tcsetattr(STDIN_FILENO, TCSANOW, &oldt);
-		}
+            tty.c_lflag |= ECHO;
+        tcsetattr(STDIN_FILENO, TCSANOW, &tty);
 #endif
 	}
 }
