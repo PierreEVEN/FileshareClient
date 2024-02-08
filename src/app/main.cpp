@@ -1,5 +1,6 @@
 #include <iostream>
 #include <fstream>
+#include <fileshare/exceptions.hpp>
 
 #include "fileshare/diff.hpp"
 #include "app/option.hpp"
@@ -32,7 +33,7 @@ std::ostream& human_readable_time(std::ostream& os, int64_t millis)
 	return os;
 };
 
-static void require_connection(fileshare::RepositoryConfig cfg)
+static void require_connection(fileshare::RepositoryConfig& cfg)
 {
 	if (!cfg.is_connected())
 	{
@@ -58,12 +59,14 @@ static void require_connection(fileshare::RepositoryConfig cfg)
 				std::cout << "Successfully logged in !" << std::endl;
 				break;
 			}
-			catch (const std::runtime_error& error)
+			catch (const fileshare::WrongCredentialsException& error)
 			{
 				if (try_cnt++ < 3)
 					std::cerr << error.what() << " Please try again" << std::endl;
-				else
-					throw;
+				else {
+                    std::cerr << "Connection failed !" << std::endl;
+                    throw;
+                }
 			}
 		}
 		while (true);
@@ -649,6 +652,27 @@ void load_options(int argc, char** argv)
 		{},
 		L"Synchronise this repository with the server. (equivalent to 'fileshare pull push')"
 	});
+
+    // Sync
+    root.add_sub_command({
+                                 L"logout", [&](auto)
+            {
+                try
+                {
+                    const auto cfg_file = fileshare::RepositoryConfig::search_repos_root_or_error(
+                            std::filesystem::current_path());
+
+                    fileshare::RepositoryConfig cfg(cfg_file);
+                    cfg.logout();
+                }
+                catch (const std::exception& e)
+                {
+                    std::cerr << e.what() << std::endl;
+                }
+            },
+                                 {},
+                                 L"Disconnect user')"
+                         });
 
 	// Get-Set remote
 	{

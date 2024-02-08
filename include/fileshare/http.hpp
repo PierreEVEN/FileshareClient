@@ -56,14 +56,15 @@ namespace fileshare
 
 		class NotFoundException : public HttpError
 		{
+            const std::string message;
 		public:
-			NotFoundException() : HttpError(404)
+			NotFoundException(const std::string& context = "") : HttpError(404), message("404 : Not found :" + context)
 			{
 			}
 
 			[[nodiscard]] const char* what() const noexcept override
 			{
-				return "404 : Not found !";
+				return message.c_str();
 			}
 		};
 

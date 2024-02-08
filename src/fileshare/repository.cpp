@@ -89,7 +89,7 @@ namespace fileshare
 			auth_token_exp = data["auth_token_exp"];
 		if (data.contains("editor"))
 			editor = Url::decode_string(data["editor"]);
-		
+
 		curl_global_cleanup();
 	}
 
@@ -281,11 +281,11 @@ namespace fileshare
 			return;
 		}
 		auto start = path.begin();
-		if (const auto bellow = dir.find_directory(*start))
+		if (const auto bellow = dir.find_directory(start->wstring()))
 			update_saved_state_dir(new_state, std::vector(++start, path.end()), *bellow, erase);
 		else
 		{
-			auto& new_dir = dir.add_directory(*start);
+			auto& new_dir = dir.add_directory(start->wstring());
 			update_saved_state_dir(new_state, std::vector(++start, path.end()), new_dir, erase);
 		}
 	}

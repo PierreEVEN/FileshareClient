@@ -12,7 +12,7 @@ namespace fileshare {
 		{
 		}
 
-		[[nodiscard]] char const* what() const override { return context.c_str(); }
+		[[nodiscard]] const char* what() const noexcept override { return context.c_str(); }
 	};
 
 	class BadRequest : std::exception
@@ -24,6 +24,6 @@ namespace fileshare {
 		{
 		}
 
-		[[nodiscard]] char const* what() const override { return context.c_str(); }
+		[[nodiscard]] const char* what() const noexcept override { return context.c_str(); }
 	};
 }

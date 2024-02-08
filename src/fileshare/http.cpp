@@ -103,9 +103,10 @@ namespace fileshare
 
 		switch (last_response)
 		{
+            case 0:
+                throw std::runtime_error("Upload error : 0");
 		case 404:
-		case 0:
-			throw NotFoundException();
+			throw NotFoundException(url);
 		case 403:
 			throw AccessDeniedException();
 		case 200:

@@ -26,7 +26,7 @@ namespace fileshare
 	}
 
 	File::File(const std::filesystem::directory_entry& in_dir_entry, const Directory* parent) :
-		name(in_dir_entry.path().filename()),
+		name(in_dir_entry.path().filename().wstring()),
 		last_write_time(in_dir_entry.last_write_time()),
 		file_size(in_dir_entry.file_size())
 	{

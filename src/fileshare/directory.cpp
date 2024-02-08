@@ -76,7 +76,7 @@ namespace fileshare
 		if (RepositoryConfig::is_interrupted())
 			throw std::runtime_error("Stopped !");
 
-		Directory dir(parent, in_path.filename());
+		Directory dir(parent, in_path.filename().wstring());
 
 		std::unordered_set<std::filesystem::path> excluded_files = { ".fileshare" };
 

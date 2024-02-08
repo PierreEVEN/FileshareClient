@@ -9,6 +9,7 @@
 #include <sys/ioctl.h>
 #include <cstdio>
 #include <unistd.h>
+#include <termios.h>
 #endif
 
 namespace fileshare

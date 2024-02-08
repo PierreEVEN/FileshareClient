@@ -154,8 +154,8 @@ namespace fileshare
 			case Diff::Operation::LocalNewer:
 				if (local)
 					throw std::runtime_error(
-						"This conflict is not possible !!\n- Previous local " + std::string(local->operation_str()) +
-						" : " + local->get_file().get_path().generic_string() + "\n- New local " +
+						"This conflict is not possible !!\n\t- Previous local " + std::string(local->operation_str()) +
+						" : " + local->get_file().get_path().generic_string() + "\n\t- New local " +
 						std::string(existing_diff->second.operation_str()) + " : " + existing_diff->second.get_file().
 						get_path().generic_string());
 				local = existing_diff->second;
@@ -163,8 +163,8 @@ namespace fileshare
 			default:
 				if (remote)
 					throw std::runtime_error(
-						"This conflict is not possible !!\n- Previous local " + std::string(remote->operation_str()) +
-						" : " + remote->get_file().get_path().generic_string() + "\n- New local " +
+						"This conflict is not possible !!\n\t- Previous remote " + std::string(remote->operation_str()) +
+						" : " + remote->get_file().get_path().generic_string() + "\n\t- New remote " +
 						std::string(existing_diff->second.operation_str()) + " : " + existing_diff->second.get_file().
 						get_path().generic_string());
 				remote = existing_diff->second;
