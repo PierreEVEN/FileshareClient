@@ -297,16 +297,13 @@ namespace fileshare
 	void ShellUtils::set_password_mode(bool enable)
 	{
 #if _WIN32
-		HANDLE hStdin = GetStdHandle(STD_INPUT_HANDLE);
+		const HANDLE hStdin = GetStdHandle(STD_INPUT_HANDLE);
 		DWORD mode = 0;
 		GetConsoleMode(hStdin, &mode);
-		if (enable) {
-			SetConsoleMode(hStdin, mode | ENABLE_ECHO_INPUT);
-		}
+		if (enable)
+			SetConsoleMode(hStdin, mode & ~ENABLE_ECHO_INPUT);
 		else
-		{
-			SetConsoleMode(hStdin, mode & ~ENABLE_ECHO_INPUT);			
-		}
+			SetConsoleMode(hStdin, mode | ENABLE_ECHO_INPUT);
 #else
         termios tty {};
         tcgetattr(STDIN_FILENO, &tty);

@@ -118,7 +118,7 @@ namespace fileshare
 		}
 	}
 
-	void Http::fetch_file(const std::string& url, std::ostream& file)
+	void Http::fetch_file(const std::string& url, std::ostream& file, std::size_t& timestamp)
 	{
 		const CurlBox curl = prepareRequest();
 
@@ -131,20 +131,19 @@ namespace fileshare
 			                 return real_size;
 		                 }));
 		curl_easy_setopt(*curl, CURLOPT_WRITEDATA, &file);
-        std::string received_headers;
-        std::cout << "A" << std::endl;
-        curl_easy_setopt(*curl, CURLOPT_HEADERFUNCTION, [] (char* buffer, size_t size, size_t nitems, void* userdata) -> size_t
-        {
-            std::cout << "B" << std::endl;
-            auto* received_headers = (std::string*) userdata;
-            received_headers->append(buffer, nitems * size);
-            return nitems * size;
-        });
-        curl_easy_setopt(*curl, CURLOPT_HEADERDATA, nullptr);
 
-        std::cout << "C" << std::endl;
 		curl_easy_perform(*curl);
 		curl_easy_getinfo(*curl, CURLINFO_RESPONSE_CODE, &last_response);
+
+		curl_header* type;
+		const auto result = curl_easy_header(*curl, "Content-Timestamp", 0, CURLH_HEADER, -1, &type);
+		if (result != CURLE_OK)
+			throw std::runtime_error("Failed to get timestamp of downloaded file : " + std::to_string(result));
+		char* end_ptr;
+		timestamp = strtoull(type->value, &end_ptr, 0);
+		if (end_ptr == type->value)
+			throw std::runtime_error("Invalid timestamp header value : " + std::string(type->value));
+
 		switch (last_response)
 		{
 		case 404:

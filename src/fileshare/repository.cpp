@@ -165,6 +165,8 @@ namespace fileshare
 		remote_domain = (url.is_https() ? "https://" : "http://") + url.get_domain();
 		remote_repository = url.get_option(L"repos") ? *url.get_option(L"repos") : L"";
 		remote_directory = url.get_option(L"directory") ? *url.get_option(L"directory") : L"";
+		auth_token = "";
+		auth_token_exp = 0;
 		saved_state = {};
 	}
 
@@ -208,13 +210,14 @@ namespace fileshare
 			Http http(auth_token);
 			std::ofstream downloaded_file(path, std::ios_base::out | std::ios_base::binary);
 
+			size_t fetched_timestamp = 0;
 			http.fetch_file(
 				remote_domain + "/repos/file?path=" + Url::encode_string(path.generic_wstring()) + "&repos=" +
 				Url::encode_string(remote_repository),
-				downloaded_file);
+				downloaded_file, fetched_timestamp);
 
 			downloaded_file.close();
-			last_write_time(path, file.get_last_write_time().to_filesystem_time());
+			last_write_time(path, FileTimeType(fetched_timestamp).to_filesystem_time());
 			update_saved_state(file);
 
 			if (moved_path)

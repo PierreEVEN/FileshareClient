@@ -155,6 +155,8 @@ TEST(Transfer, EditNewer)
                     });
 
     diff = test_env.get_current_diff();
+    for (const auto& diff : diff.get_changes())
+        std::cout << diff.operation_str() << " / " << diff.get_file().get_path() << ":" << diff.get_file().get_last_write_time().milliseconds_since_epoch() << std::endl;
     EXPECT_EQ(diff.get_changes().size(), 0);
     EXPECT_EQ(diff.get_conflicts().size(), 0);
 
