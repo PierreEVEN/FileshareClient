@@ -131,7 +131,18 @@ namespace fileshare
 			                 return real_size;
 		                 }));
 		curl_easy_setopt(*curl, CURLOPT_WRITEDATA, &file);
+        std::string received_headers;
+        std::cout << "A" << std::endl;
+        curl_easy_setopt(*curl, CURLOPT_HEADERFUNCTION, [] (char* buffer, size_t size, size_t nitems, void* userdata) -> size_t
+        {
+            std::cout << "B" << std::endl;
+            auto* received_headers = (std::string*) userdata;
+            received_headers->append(buffer, nitems * size);
+            return nitems * size;
+        });
+        curl_easy_setopt(*curl, CURLOPT_HEADERDATA, nullptr);
 
+        std::cout << "C" << std::endl;
 		curl_easy_perform(*curl);
 		curl_easy_getinfo(*curl, CURLINFO_RESPONSE_CODE, &last_response);
 		switch (last_response)

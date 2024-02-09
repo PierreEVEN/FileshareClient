@@ -69,7 +69,7 @@ namespace fileshare
 				if (saved_file->get_last_write_time() > remote_file.get_last_write_time())
 					*this += Diff{remote_file, Diff::Operation::RemoteRevert};
 				else if (saved_file->get_last_write_time() < remote_file.get_last_write_time())
-					*this += Diff{remote_file, Diff::Operation::RemoteNewer};
+                    *this += Diff{remote_file, Diff::Operation::RemoteNewer};
 			}
 			else
 			{

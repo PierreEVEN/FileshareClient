@@ -98,14 +98,6 @@ void FileshareTestEnvironment::reopen_config()
 	current_path(get_test_data_dir());
 }
 
-void FileshareTestEnvironment::ensure_is_sync() const
-{
-	const auto diff = fileshare::DiffResult(fileshare::Directory::from_path(get_test_data_dir(), nullptr),
-	                                        get_config().get_saved_state(), get_config().fetch_repos_status());
-	ASSERT_EQ(diff.get_changes().size(), 0);
-	ASSERT_EQ(diff.get_conflicts().size(), 0);
-}
-
 void FileshareTestEnvironment::make_random_tree_internal(const std::filesystem::path& target, size_t depth,
                                                          size_t objects_per_dir) const
 {
@@ -124,4 +116,31 @@ void FileshareTestEnvironment::make_random_tree_internal(const std::filesystem::
 			fs.close();
 		}
 	}
+}
+
+std::vector<char> FileshareTestEnvironment::edit_file(const std::filesystem::path& file,size_t data_inside) {
+    if (!exists(file.parent_path()))
+        create_directories(file.parent_path());
+
+    std::ofstream f(file, std::ios_base::binary | std::ios_base::out);
+    std::vector<char> rand_data(data_inside);
+    for (auto& data : rand_data)
+        data = static_cast<char>(rand());
+    f.write(rand_data.data(), data_inside);
+    f.close();
+    return rand_data;
+}
+
+fileshare::DiffResult FileshareTestEnvironment::get_current_diff() const
+{
+    return {fileshare::Directory::from_path(get_test_data_dir(), nullptr), get_config().get_saved_state(), get_config().fetch_repos_status()};
+}
+
+std::vector<char> FileshareTestEnvironment::get_file_data(const std::filesystem::path &file) {
+
+    if (!exists(file))
+        throw std::runtime_error("File does not exists");
+    std::ifstream f(file, std::ios_base::binary | std::ios_base::in);
+    std::vector<char> buffer(std::istreambuf_iterator<char>(f), {});
+    return buffer;
 }

@@ -4,6 +4,7 @@
 
 #include "fileshare/directory.hpp"
 #include "fileshare/repository.hpp"
+#include "fileshare/diff.hpp"
 
 class FileshareTestEnvironment : public testing::Environment
 {
@@ -31,9 +32,12 @@ public:
 
 	void reopen_config();
 
-	void ensure_is_sync() const;
+    std::vector<char> edit_file(const std::filesystem::path& file, size_t data_inside);
+    std::vector<char> get_file_data(const std::filesystem::path& file);
 
+    [[nodiscard]] fileshare::DiffResult get_current_diff() const;
 private:
 	std::unique_ptr<fileshare::RepositoryConfig> cfg;
 	void make_random_tree_internal(const std::filesystem::path& target, size_t depth, size_t objects_per_dir) const;
+
 };

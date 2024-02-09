@@ -216,6 +216,7 @@ namespace fileshare
 			downloaded_file.close();
 			last_write_time(path, file.get_last_write_time().to_filesystem_time());
 			update_saved_state(file);
+
 			if (moved_path)
 				std::filesystem::remove(*moved_path);
 		}
