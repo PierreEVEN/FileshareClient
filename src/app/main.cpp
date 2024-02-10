@@ -393,7 +393,7 @@ void load_options(int argc, char** argv)
 					                                    diffs.get_changes().size());
 					size_t i = 0;
 
-					for (const auto& change : diffs.get_changes())
+					for (auto& change : diffs.get_changes())
 					{
 						if (fileshare::RepositoryConfig::is_interrupted())
 							throw std::runtime_error("Stopped !");
@@ -502,7 +502,7 @@ void load_options(int argc, char** argv)
 				                                    diffs.get_changes().size());
 				size_t i = 0;
 
-				for (const auto& change : diffs.get_changes())
+				for (auto& change : diffs.get_changes())
 				{
 					if (fileshare::RepositoryConfig::is_interrupted())
 						throw std::runtime_error("Stopped !");

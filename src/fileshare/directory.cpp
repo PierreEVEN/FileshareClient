@@ -45,7 +45,7 @@ namespace fileshare
 		if (js_files != json.end()) {
 			for (const auto& entry : *js_files)
 			{
-				dir.files.emplace_back(File{ entry, &dir });
+				dir.files.emplace_back(File::from_json(entry, &dir));
 			}
 		}
 		const auto& js_dirs = json.find("directories");
@@ -98,7 +98,7 @@ namespace fileshare
 				continue;
 			if (entry.is_regular_file())
 			{
-				dir.files.emplace_back(File{ entry, &dir });
+				dir.files.emplace_back(File::from_dir_entry(entry, &dir));
 			}
 			else if (entry.is_directory())
 				dir.directories.emplace_back(from_path_internal(entry.path(), &dir));

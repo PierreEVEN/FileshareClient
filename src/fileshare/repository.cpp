@@ -190,7 +190,7 @@ namespace fileshare
 		}
 	}
 
-	void RepositoryConfig::download_replace_file(const File& file)
+	void RepositoryConfig::download_replace_file(File& file)
 	{
 		const auto& path = file.get_path();
 		require_sync();
@@ -218,6 +218,7 @@ namespace fileshare
 
 			downloaded_file.close();
 			last_write_time(path, FileTimeType(fetched_timestamp).to_filesystem_time());
+            file.set_last_write_time(FileTimeType(fetched_timestamp));
 			update_saved_state(file);
 
 			if (moved_path)

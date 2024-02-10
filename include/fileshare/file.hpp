@@ -33,14 +33,17 @@ namespace fileshare
 	class File
 	{
 		friend class Directory;
+        File(const Directory* in_parent, const FileTimeType& last_write_time, size_t size, std::wstring  name );
 	public:
-		File(const nlohmann::json& json, const Directory* in_parent);
-		File(const std::filesystem::directory_entry& in_dir_entry, const Directory* in_parent);
+        static File from_path(const std::filesystem::path& in_path, const Directory* in_parent);
+        static File from_dir_entry(const std::filesystem::directory_entry& in_path, const Directory* in_parent);
+        static File from_json(const nlohmann::json& in_path, const Directory* in_parent);
 
 		[[nodiscard]] const size_t& get_file_size() const { return file_size; }
 		[[nodiscard]] const std::filesystem::path& get_path() const { return path; }
 		[[nodiscard]] const std::wstring& get_name() const { return name; }
 		[[nodiscard]] const FileTimeType& get_last_write_time() const { return last_write_time; }
+        void set_last_write_time(const FileTimeType& new_write_time) { last_write_time = new_write_time; }
 
 		[[nodiscard]] nlohmann::json serialize() const;
 

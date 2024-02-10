@@ -22,7 +22,7 @@ namespace fileshare
 		void set_full_url(const std::wstring& new_url);
 		
 		[[nodiscard]] Directory fetch_repos_status() const;
-		void download_replace_file(const File& file);
+		void download_replace_file(File& file);
         void receive_delete_file(const File& file);
         void upload_file(const File& file);
         void send_delete_file(const File& file);

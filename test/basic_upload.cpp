@@ -79,7 +79,7 @@ TEST(Transfer, UploadClone)
 
 	// Clone
 	EXPECT_NO_THROW({
-		for (const auto& file : test_env.get_config().fetch_repos_status().get_files_recursive())
+		for (auto& file : test_env.get_config().fetch_repos_status().get_files_recursive())
 		test_env.get_config().download_replace_file(file);
 		});
 
@@ -150,13 +150,13 @@ TEST(Transfer, EditNewer)
 
     // Clone
     EXPECT_NO_THROW({
-                        for (const auto& file : test_env.get_config().fetch_repos_status().get_files_recursive())
+                        for (auto& file : test_env.get_config().fetch_repos_status().get_files_recursive())
                             test_env.get_config().download_replace_file(file);
                     });
 
     diff = test_env.get_current_diff();
-    for (const auto& diff : diff.get_changes())
-        std::cout << diff.operation_str() << " / " << diff.get_file().get_path() << ":" << diff.get_file().get_last_write_time().milliseconds_since_epoch() << std::endl;
+    for (auto& in_diff : diff.get_changes())
+        std::cout << in_diff.operation_str() << " / " << in_diff.get_file().get_path() << ":" << in_diff.get_file().get_last_write_time().milliseconds_since_epoch() << std::endl;
     EXPECT_EQ(diff.get_changes().size(), 0);
     EXPECT_EQ(diff.get_conflicts().size(), 0);
 
@@ -210,10 +210,15 @@ TEST(Transfer, EditOlder)
 
     // Download replace
     EXPECT_NO_THROW({
-                        for (const auto& file : diff.get_changes())
+                        for (auto& file : diff.get_changes())
                             test_env.get_config().download_replace_file(file.get_file());
                     });
     diff = test_env.get_current_diff();
+
+    for (const auto& [local, remote] : diff.get_conflicts()) {
+        std::cout << local.operation_str() << " : " << remote.operation_str() << local.get_file().get_path() << std::endl;
+    }
+
     EXPECT_EQ(diff.get_changes().size(), 0);
     EXPECT_EQ(diff.get_conflicts().size(), 0);
 
@@ -223,7 +228,7 @@ TEST(Transfer, EditOlder)
 
     // Clone
     EXPECT_NO_THROW({
-                        for (const auto& file : test_env.get_config().fetch_repos_status().get_files_recursive())
+                        for (auto& file : test_env.get_config().fetch_repos_status().get_files_recursive())
                             test_env.get_config().download_replace_file(file);
                     });
 

@@ -28,7 +28,8 @@ namespace fileshare {
 		[[nodiscard]] const char* operation_str() const;
 
 		[[nodiscard]] Operation get_operation() const { return operation; }
-		[[nodiscard]] const File& get_file() const { return file; }
+		[[nodiscard]] File& get_file() { return file; }
+        [[nodiscard]] const File& get_file() const { return file; }
 
 	private:
 		Operation operation;
