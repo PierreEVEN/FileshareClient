@@ -727,8 +727,20 @@ void load_options(int argc, char** argv)
 
 int main(int argc, char** argv)
 {
-    std::cout << "code : " << (size_t)std::wstring(L"é")[0] << std::endl;
-	std::cout << "enc : " << fileshare::Url::encode_string(std::wstring(L"é")) << std::endl;
+    const auto wstr = std::wstring(L"é");
+    const auto str = fileshare::Url::wstring_to_utf8(wstr);
+    std::wcout << "uni : " << wstr << std::endl;
+    std::wcout << "codeuni : " << (size_t)wstr[0] << std::endl;
+    std::cout << "utf8 : " << str << std::endl;
+    std::wcout << "codeutf : " << (int)(unsigned char)str[0] << std::endl;
+    const auto encod = fileshare::Url::encode_string(wstr);
+	std::cout << "enc : " << encod << std::endl;
+
+    const auto deco = fileshare::Url::decode_string(encod);
+
+    std::wcout << "dec : " << deco << std::endl;
+    std::wcout << "decCode : " << (int)deco[0] << std::endl;
+
 	return 0;
 
 	fileshare::ShellUtils::init();

@@ -46,7 +46,7 @@ namespace fileshare
 #if _WIN32
 					sprintf_s(buf, "%.2X", static_cast<unsigned char>(i));
 #else
-					snprintf(buf, 3, "%.2X", i); //syntax using snprintf For Linux
+					snprintf(buf, 3, "%.2X", static_cast<unsigned char>(i)); //syntax using snprintf For Linux
 #endif
 					encoded.append(buf);
 				}
@@ -66,7 +66,7 @@ namespace fileshare
 #else
                     char* end_ptr;
                     const auto substring = src.substr(i + 1, 2);
-                    decoded = static_cast<CharT>(strtoul(substring.c_str(), &end_ptr, 10));
+                    decoded = static_cast<CharT>(strtoull(substring.c_str(), &end_ptr, 16));
                     if (end_ptr == substring.c_str())
                         throw std::runtime_error("Failed to decode string : " + substring);
 #endif
