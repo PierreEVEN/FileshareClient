@@ -3,6 +3,7 @@
 #include <fstream>
 #include <unordered_set>
 #include <nlohmann/json.hpp>
+#include <iostream>
 
 #include "fileshare/profiler.hpp"
 #include "fileshare/url.hpp"
@@ -28,7 +29,8 @@ namespace fileshare
 	Directory Directory::from_json(const nlohmann::json& json, const Directory* parent)
 	{
 		MEASURE_DURATION(GetTreeFromPath, "Get tree from json data");
-		return from_json_internal(json, parent);
+		auto res = from_json_internal(json, parent);
+        return res;
 	}
 
 	Directory Directory::from_json_internal(const nlohmann::json& json, const Directory* parent)

@@ -44,12 +44,12 @@ namespace fileshare
 			{
 				if (file.get_name() == new_file.get_name()) {
 					file = new_file;
-					file.path = get_path() / file.get_name();
+                    files.back().update_parent(this);
 					return;
 				}
 			}
 			files.emplace_back(new_file);
-			files.back().path = get_path() / files.back().get_name();
+			files.back().update_parent(this);
 		}
 
 		void delete_file(const std::wstring& file_name)

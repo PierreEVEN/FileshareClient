@@ -121,8 +121,12 @@ void FileshareTestEnvironment::make_random_tree_internal(const std::filesystem::
 std::vector<char> FileshareTestEnvironment::edit_file(const std::filesystem::path& file,size_t data_inside) {
     if (!exists(file.parent_path()))
         create_directories(file.parent_path());
+    if (!exists(file.parent_path()))
+        throw std::runtime_error("Failed to create parent dir");
 
     std::ofstream f(file, std::ios_base::binary | std::ios_base::out);
+    if (!f.is_open())
+        throw std::runtime_error("Failed to open file");
     std::vector<char> rand_data(data_inside);
     for (auto& data : rand_data)
         data = static_cast<char>(rand());

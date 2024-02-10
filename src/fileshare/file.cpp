@@ -33,7 +33,7 @@ namespace fileshare
             last_write_time = js_timestamp->get<int64_t>();
 
         size_t file_size = 0;
-        const auto js_file_size = json.find("timestamp");
+        const auto js_file_size = json.find("size");
         if (js_file_size != json.end())
             file_size = js_file_size->get<int64_t>();
 
@@ -45,8 +45,13 @@ namespace fileshare
             last_write_time(last_write_time),
             file_size(size)
     {
-        if (in_parent && !in_parent->is_root())
-            path = in_parent->get_path() / name;
+        if (in_parent)
+            update_parent(in_parent);
+    }
+
+    void File::update_parent(const Directory *new_parent) {
+        if (new_parent && !new_parent->is_root())
+            path = new_parent->get_path() / name;
         else
             path = name;
     }

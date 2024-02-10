@@ -135,14 +135,8 @@ namespace fileshare
 		curl_easy_perform(*curl);
 		curl_easy_getinfo(*curl, CURLINFO_RESPONSE_CODE, &last_response);
 
-		curl_header* type;
-		const auto result = curl_easy_header(*curl, "Content-Timestamp", 0, CURLH_HEADER, -1, &type);
-		if (result != CURLE_OK)
-			throw std::runtime_error("Failed to get timestamp of downloaded file : " + std::to_string(result));
-		char* end_ptr;
-		timestamp = strtoull(type->value, &end_ptr, 0);
-		if (end_ptr == type->value)
-			throw std::runtime_error("Invalid timestamp header value : " + std::string(type->value));
+        curl_header* type;
+        const auto result = curl_easy_header(*curl, "Content-Timestamp", 0, CURLH_HEADER, -1, &type);
 
 		switch (last_response)
 		{
@@ -154,7 +148,14 @@ namespace fileshare
 		case 200:
 		case 201:
 		case 202:
-			return;
+            if (result != CURLHE_OK)
+                throw std::runtime_error("Failed to get timestamp of downloaded file : " + std::to_string(result));
+            char* end_ptr;
+            timestamp = strtoull(type->value, &end_ptr, 0);
+            if (end_ptr == type->value)
+                throw std::runtime_error("Invalid timestamp header value : " + std::string(type->value));
+
+            return;
 		default:
 			throw HttpError(last_response);
 		}

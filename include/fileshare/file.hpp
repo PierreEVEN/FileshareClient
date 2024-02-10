@@ -46,7 +46,7 @@ namespace fileshare
         void set_last_write_time(const FileTimeType& new_write_time) { last_write_time = new_write_time; }
 
 		[[nodiscard]] nlohmann::json serialize() const;
-
+        void update_parent(const Directory* new_parent);
 	private:
 		std::wstring name;
 		std::filesystem::path path;

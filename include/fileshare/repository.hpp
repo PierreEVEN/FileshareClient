@@ -24,7 +24,7 @@ namespace fileshare
 		[[nodiscard]] Directory fetch_repos_status() const;
 		void download_replace_file(File& file);
         void receive_delete_file(const File& file);
-        void upload_file(const File& file);
+        void upload_file(File& file);
         void send_delete_file(const File& file);
 
 		void connect(const std::wstring& username, const std::wstring& password);
@@ -45,8 +45,6 @@ namespace fileshare
 		}
 
 		void update_saved_state(const File& new_state, bool erase = false);
-
-        static void force_stop();
 
         static bool is_interrupted();
 

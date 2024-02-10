@@ -308,10 +308,12 @@ namespace fileshare
 		update_saved_state(file, true);
 	}
 
-	void RepositoryConfig::upload_file(const File& file)
+	void RepositoryConfig::upload_file(File& file)
 	{
 		if (!exists(file.get_path()))
 			throw std::runtime_error("The uploaded file does not exists : " + file.get_path().generic_string());
+
+        file.set_last_write_time(std::filesystem::last_write_time(file.get_path()));
 
 		constexpr int64_t PACKET_SIZE = 20 * 1024 * 1024;
 
@@ -320,7 +322,6 @@ namespace fileshare
 
 		std::ifstream file_read_stream(file.get_path(), std::ios_base::binary | std::ios_base::in);
 		std::optional<std::string> content_token;
-
 		while ((uploaded_size < total_size && !is_interrupted()) || total_size == 0)
 		{
 			int64_t packet_size = std::min(PACKET_SIZE, total_size - uploaded_size);

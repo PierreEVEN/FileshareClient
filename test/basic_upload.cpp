@@ -23,7 +23,7 @@ TEST(Transfer, UploadDelete)
 
 	// Upload
 	EXPECT_NO_THROW({
-		for (const auto& file : tree.get_files_recursive())
+		for (auto& file : tree.get_files_recursive())
 		test_env.get_config().upload_file(file);
 		});
 
@@ -45,6 +45,8 @@ TEST(Transfer, UploadDelete)
 
 	// Check
 	EXPECT_EQ(test_env.get_config().fetch_repos_status().get_files_recursive().size(), 0);
+    for (const auto& file : fileshare::Directory::from_path(test_env.get_test_data_dir(), nullptr).get_files_recursive())
+        std::filesystem::remove(file.get_path());
 }
 
 TEST(Transfer, UploadClone)
@@ -55,7 +57,7 @@ TEST(Transfer, UploadClone)
 
 	// Upload
 	EXPECT_NO_THROW({
-		for (const auto& file : initial_tree.get_files_recursive())
+		for (auto& file : initial_tree.get_files_recursive())
 		test_env.get_config().upload_file(file);
 		});
 
@@ -100,6 +102,8 @@ TEST(Transfer, UploadClone)
 
 	// Check
 	EXPECT_EQ(test_env.get_config().fetch_repos_status().get_files_recursive().size(), 0);
+    for (const auto& file : fileshare::Directory::from_path(test_env.get_test_data_dir(), nullptr).get_files_recursive())
+        std::filesystem::remove(file.get_path());
 }
 
 
@@ -114,7 +118,7 @@ TEST(Transfer, EditNewer)
     auto tree = fileshare::Directory::from_path(test_env.get_test_data_dir(), nullptr);
     // Upload
     EXPECT_NO_THROW({
-                        for (const auto& file : tree.get_files_recursive())
+                        for (auto& file : tree.get_files_recursive())
                             test_env.get_config().upload_file(file);
                     });
 
@@ -137,7 +141,7 @@ TEST(Transfer, EditNewer)
     // Upload
     tree = fileshare::Directory::from_path(test_env.get_test_data_dir(), nullptr);
     EXPECT_NO_THROW({
-                        for (const auto& file : tree.get_files_recursive())
+                        for (auto& file : tree.get_files_recursive())
                             test_env.get_config().upload_file(file);
                     });
     diff = test_env.get_current_diff();
@@ -155,8 +159,6 @@ TEST(Transfer, EditNewer)
                     });
 
     diff = test_env.get_current_diff();
-    for (auto& in_diff : diff.get_changes())
-        std::cout << in_diff.operation_str() << " / " << in_diff.get_file().get_path() << ":" << in_diff.get_file().get_last_write_time().milliseconds_since_epoch() << std::endl;
     EXPECT_EQ(diff.get_changes().size(), 0);
     EXPECT_EQ(diff.get_conflicts().size(), 0);
 
@@ -172,6 +174,8 @@ TEST(Transfer, EditNewer)
                         test_env.get_config().send_delete_file(file);
                     });
     EXPECT_EQ(test_env.get_config().fetch_repos_status().get_files_recursive().size(), 0);
+    for (const auto& file : fileshare::Directory::from_path(test_env.get_test_data_dir(), nullptr).get_files_recursive())
+        std::filesystem::remove(file.get_path());
 }
 
 
@@ -186,7 +190,7 @@ TEST(Transfer, EditOlder)
     auto tree = fileshare::Directory::from_path(test_env.get_test_data_dir(), nullptr);
     // Upload
     EXPECT_NO_THROW({
-                        for (const auto& file : tree.get_files_recursive())
+                        for (auto& file : tree.get_files_recursive())
                             test_env.get_config().upload_file(file);
                     });
 
@@ -214,10 +218,6 @@ TEST(Transfer, EditOlder)
                             test_env.get_config().download_replace_file(file.get_file());
                     });
     diff = test_env.get_current_diff();
-
-    for (const auto& [local, remote] : diff.get_conflicts()) {
-        std::cout << local.operation_str() << " : " << remote.operation_str() << local.get_file().get_path() << std::endl;
-    }
 
     EXPECT_EQ(diff.get_changes().size(), 0);
     EXPECT_EQ(diff.get_conflicts().size(), 0);
@@ -248,4 +248,297 @@ TEST(Transfer, EditOlder)
                             test_env.get_config().send_delete_file(file);
                     });
     EXPECT_EQ(test_env.get_config().fetch_repos_status().get_files_recursive().size(), 0);
+    for (const auto& file : fileshare::Directory::from_path(test_env.get_test_data_dir(), nullptr).get_files_recursive())
+        std::filesystem::remove(file.get_path());
+}
+
+
+TEST(Transfer, EditDelete)
+{
+    auto& test_env = FileshareTestEnvironment::get_connected();
+
+    // Create data and send it
+    create_directories(test_env.get_test_data_dir() / "test_dir");
+    const auto data1 = test_env.edit_file(test_env.get_test_data_dir() / "test_dir" / "test_file.bin", 100);
+    const auto data2 = test_env.edit_file(test_env.get_test_data_dir() / "test_file_2.bin", 100);
+    auto tree = fileshare::Directory::from_path(test_env.get_test_data_dir(), nullptr);
+    // Upload
+    EXPECT_NO_THROW({
+                        for (auto& file : tree.get_files_recursive())
+                            test_env.get_config().upload_file(file);
+                    });
+
+    // Check
+    auto diff = test_env.get_current_diff();
+    EXPECT_EQ(diff.get_changes().size(), 0);
+    EXPECT_EQ(diff.get_conflicts().size(), 0);
+
+    // Delete local files
+    std::filesystem::remove(test_env.get_test_data_dir() / "test_dir" / "test_file.bin");
+    std::filesystem::remove(test_env.get_test_data_dir() / "test_file_2.bin");
+
+    // Search for diffs
+    diff = test_env.get_current_diff();
+    EXPECT_EQ(diff.get_changes().size(), 2);
+    for (const auto& change : diff.get_changes())
+        EXPECT_EQ(change.get_operation(), fileshare::Diff::Operation::LocalDelete);
+    EXPECT_EQ(diff.get_conflicts().size(), 0);
+
+    // Download replace
+    EXPECT_NO_THROW({
+                        for (auto& file : diff.get_changes())
+                            test_env.get_config().download_replace_file(file.get_file());
+                    });
+    diff = test_env.get_current_diff();
+
+    EXPECT_EQ(diff.get_changes().size(), 0);
+    EXPECT_EQ(diff.get_conflicts().size(), 0);
+
+    // Delete local files
+    std::filesystem::remove(test_env.get_test_data_dir() / "test_dir" / "test_file.bin");
+    std::filesystem::remove(test_env.get_test_data_dir() / "test_file_2.bin");
+
+    // Search for diffs
+    diff = test_env.get_current_diff();
+
+    EXPECT_EQ(diff.get_changes().size(), 2);
+    for (const auto& change : diff.get_changes())
+        EXPECT_EQ(change.get_operation(), fileshare::Diff::Operation::LocalDelete);
+    EXPECT_EQ(diff.get_conflicts().size(), 0);
+
+    // Download replace
+    EXPECT_NO_THROW({
+                        for (auto& file : diff.get_changes())
+                            test_env.get_config().send_delete_file(file.get_file());
+                    });
+    diff = test_env.get_current_diff();
+    EXPECT_EQ(diff.get_changes().size(), 0);
+    EXPECT_EQ(diff.get_conflicts().size(), 0);
+
+    EXPECT_EQ(fileshare::Directory::from_path(test_env.get_test_data_dir(), nullptr).get_files_recursive().size(), 0);
+
+    // Cleanup
+    tree = fileshare::Directory::from_path(test_env.get_test_data_dir(), nullptr);
+    EXPECT_NO_THROW({
+                        for (const auto& file : tree.get_files_recursive())
+                            test_env.get_config().send_delete_file(file);
+                    });
+    EXPECT_EQ(test_env.get_config().fetch_repos_status().get_files_recursive().size(), 0);
+    for (const auto& file : fileshare::Directory::from_path(test_env.get_test_data_dir(), nullptr).get_files_recursive())
+        std::filesystem::remove(file.get_path());
+}
+
+TEST(Transfer, RemoteUpdate)
+{
+    auto& test_env = FileshareTestEnvironment::get_connected();
+
+    for (const auto& file : fileshare::Directory::from_path(test_env.get_test_data_dir(), nullptr).get_files_recursive())
+        std::filesystem::remove(file.get_path());
+
+    // Create data and send it
+    create_directories(test_env.get_test_data_dir() / "test_dir");
+    const auto data1 = test_env.edit_file(test_env.get_test_data_dir() / "test_dir" / "test_file.bin", 100);
+    const auto data2 = test_env.edit_file(test_env.get_test_data_dir() / "test_file_2.bin", 100);
+    auto tree = fileshare::Directory::from_path(test_env.get_test_data_dir(), nullptr);
+    // Upload
+    EXPECT_NO_THROW({
+                        for (auto& file : tree.get_files_recursive())
+                            test_env.get_config().upload_file(file);
+                    });
+
+    // Check
+    auto diff = test_env.get_current_diff();
+    EXPECT_EQ(diff.get_changes().size(), 0);
+    EXPECT_EQ(diff.get_conflicts().size(), 0);
+
+    // Make local file older
+    for (auto& file : tree.get_files_recursive()) {
+        std::filesystem::last_write_time(file.get_path(), std::chrono::file_clock::now() - std::chrono::years(1));
+        file.set_last_write_time(fileshare::FileTimeType(std::filesystem::last_write_time(file.get_path())));
+        test_env.get_config().update_saved_state(file);
+    }
+
+    // Search for diffs
+    diff = test_env.get_current_diff();
+    EXPECT_EQ(diff.get_changes().size(), 2);
+    for (const auto& change : diff.get_changes())
+        EXPECT_EQ(change.get_operation(), fileshare::Diff::Operation::RemoteNewer);
+    EXPECT_EQ(diff.get_conflicts().size(), 0);
+
+    // Download replace
+    EXPECT_NO_THROW({
+                        for (auto& file : diff.get_changes())
+                            test_env.get_config().download_replace_file(file.get_file());
+                    });
+    diff = test_env.get_current_diff();
+
+    EXPECT_EQ(diff.get_changes().size(), 0);
+    EXPECT_EQ(diff.get_conflicts().size(), 0);
+
+
+    // Cleanup
+    tree = fileshare::Directory::from_path(test_env.get_test_data_dir(), nullptr);
+    EXPECT_NO_THROW({
+                        for (const auto& file : tree.get_files_recursive())
+                            test_env.get_config().send_delete_file(file);
+                    });
+    EXPECT_EQ(test_env.get_config().fetch_repos_status().get_files_recursive().size(), 0);
+    for (const auto& file : fileshare::Directory::from_path(test_env.get_test_data_dir(), nullptr).get_files_recursive())
+        std::filesystem::remove(file.get_path());
+}
+
+TEST(Transfer, RemoteDelete)
+{
+    auto& test_env = FileshareTestEnvironment::get_connected();
+
+    // Create data and send it
+    create_directories(test_env.get_test_data_dir() / "test_dir");
+    const auto data1 = test_env.edit_file(test_env.get_test_data_dir() / "test_dir" / "test_file.bin", 100);
+    const auto data2 = test_env.edit_file(test_env.get_test_data_dir() / "test_file_2.bin", 100);
+    auto tree = fileshare::Directory::from_path(test_env.get_test_data_dir(), nullptr);
+
+    // Check
+    auto diff = test_env.get_current_diff();
+    EXPECT_EQ(diff.get_changes().size(), 2);
+    for (const auto& change : diff.get_changes())
+        EXPECT_EQ(change.get_operation(), fileshare::Diff::Operation::LocalAdded);
+    EXPECT_EQ(diff.get_conflicts().size(), 0);
+
+    for (auto& file : tree.get_files_recursive())
+        test_env.get_config().update_saved_state(file);
+
+    diff = test_env.get_current_diff();
+    EXPECT_EQ(diff.get_changes().size(), 2);
+    for (const auto& change : diff.get_changes())
+        EXPECT_EQ(change.get_operation(), fileshare::Diff::Operation::RemoteDelete);
+    EXPECT_EQ(diff.get_conflicts().size(), 0);
+
+    // Download replace
+    EXPECT_NO_THROW({
+                        for (auto& file : diff.get_changes())
+                            test_env.get_config().receive_delete_file(file.get_file());
+                    });
+    diff = test_env.get_current_diff();
+
+    EXPECT_EQ(diff.get_changes().size(), 0);
+    EXPECT_EQ(diff.get_conflicts().size(), 0);
+}
+
+
+TEST(Transfer, RemoteAdd)
+{
+    auto& test_env = FileshareTestEnvironment::get_connected();
+
+    for (const auto& file : fileshare::Directory::from_path(test_env.get_test_data_dir(), nullptr).get_files_recursive())
+        std::filesystem::remove(file.get_path());
+
+    // Create data and send it
+    create_directories(test_env.get_test_data_dir() / "test_dir");
+    const auto data1 = test_env.edit_file(test_env.get_test_data_dir() / "test_dir" / "test_file.bin", 100);
+    const auto data2 = test_env.edit_file(test_env.get_test_data_dir() / "test_file_2.bin", 100);
+    auto tree = fileshare::Directory::from_path(test_env.get_test_data_dir(), nullptr);
+    // Upload
+    EXPECT_NO_THROW({
+                        for (auto& file : tree.get_files_recursive())
+                            test_env.get_config().upload_file(file);
+                    });
+
+    // Check
+    auto diff = test_env.get_current_diff();
+    EXPECT_EQ(diff.get_changes().size(), 0);
+    EXPECT_EQ(diff.get_conflicts().size(), 0);
+
+    // Make local file older
+    for (auto& file : tree.get_files_recursive()) {
+        std::filesystem::remove(file.get_path());
+        test_env.get_config().update_saved_state(file, true);
+    }
+
+    // Search for diffs
+    diff = test_env.get_current_diff();
+    EXPECT_EQ(diff.get_changes().size(), 2);
+    for (const auto& change : diff.get_changes())
+        EXPECT_EQ(change.get_operation(), fileshare::Diff::Operation::RemoteAdded);
+    EXPECT_EQ(diff.get_conflicts().size(), 0);
+
+    // Download replace
+    EXPECT_NO_THROW({
+                        for (auto& file : diff.get_changes())
+                            test_env.get_config().download_replace_file(file.get_file());
+                    });
+    diff = test_env.get_current_diff();
+
+    EXPECT_EQ(diff.get_changes().size(), 0);
+    EXPECT_EQ(diff.get_conflicts().size(), 0);
+
+
+    // Cleanup
+    tree = fileshare::Directory::from_path(test_env.get_test_data_dir(), nullptr);
+    EXPECT_NO_THROW({
+                        for (const auto& file : tree.get_files_recursive())
+                            test_env.get_config().send_delete_file(file);
+                    });
+    EXPECT_EQ(test_env.get_config().fetch_repos_status().get_files_recursive().size(), 0);
+    for (const auto& file : fileshare::Directory::from_path(test_env.get_test_data_dir(), nullptr).get_files_recursive())
+        std::filesystem::remove(file.get_path());
+}
+
+
+TEST(Transfer, RemoteRevert)
+{
+    auto& test_env = FileshareTestEnvironment::get_connected();
+
+    for (const auto& file : fileshare::Directory::from_path(test_env.get_test_data_dir(), nullptr).get_files_recursive())
+        std::filesystem::remove(file.get_path());
+
+    // Create data and send it
+    create_directories(test_env.get_test_data_dir() / "test_dir");
+    const auto data1 = test_env.edit_file(test_env.get_test_data_dir() / "test_dir" / "test_file.bin", 100);
+    const auto data2 = test_env.edit_file(test_env.get_test_data_dir() / "test_file_2.bin", 100);
+    auto tree = fileshare::Directory::from_path(test_env.get_test_data_dir(), nullptr);
+    // Upload
+    EXPECT_NO_THROW({
+                        for (auto& file : tree.get_files_recursive())
+                            test_env.get_config().upload_file(file);
+                    });
+
+    // Check
+    auto diff = test_env.get_current_diff();
+    EXPECT_EQ(diff.get_changes().size(), 0);
+    EXPECT_EQ(diff.get_conflicts().size(), 0);
+
+    // Make remote file older
+    for (auto& file : tree.get_files_recursive()) {
+        std::filesystem::last_write_time(file.get_path(), std::chrono::file_clock::now() + std::chrono::years(1));
+        file.set_last_write_time(fileshare::FileTimeType(std::filesystem::last_write_time(file.get_path())));
+        test_env.get_config().update_saved_state(file);
+    }
+
+    // Search for diffs
+    diff = test_env.get_current_diff();
+    EXPECT_EQ(diff.get_changes().size(), 2);
+    for (const auto& change : diff.get_changes())
+        EXPECT_EQ(change.get_operation(), fileshare::Diff::Operation::RemoteRevert);
+    EXPECT_EQ(diff.get_conflicts().size(), 0);
+
+    // Download replace
+    EXPECT_NO_THROW({
+                        for (auto& file : diff.get_changes())
+                            test_env.get_config().upload_file(file.get_file());
+                    });
+
+    diff = test_env.get_current_diff();
+    EXPECT_EQ(diff.get_changes().size(), 0);
+    EXPECT_EQ(diff.get_conflicts().size(), 0);
+
+
+    // Cleanup
+    tree = fileshare::Directory::from_path(test_env.get_test_data_dir(), nullptr);
+    EXPECT_NO_THROW({
+                        for (const auto& file : tree.get_files_recursive())
+                            test_env.get_config().send_delete_file(file);
+                    });
+    EXPECT_EQ(test_env.get_config().fetch_repos_status().get_files_recursive().size(), 0);
+    for (const auto& file : fileshare::Directory::from_path(test_env.get_test_data_dir(), nullptr).get_files_recursive())
+        std::filesystem::remove(file.get_path());
 }
