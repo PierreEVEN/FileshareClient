@@ -727,7 +727,8 @@ void load_options(int argc, char** argv)
 
 int main(int argc, char** argv)
 {
-	std::cout << "enc" << fileshare::Url::encode_string(std::wstring(L"�")) << std::endl;
+    std::cout << "code : " << (size_t)std::wstring(L"é")[0] << std::endl;
+	std::cout << "enc : " << fileshare::Url::encode_string(std::wstring(L"é")) << std::endl;
 	return 0;
 
 	fileshare::ShellUtils::init();
