@@ -85,13 +85,13 @@ namespace fileshare
 		if (str.empty())
 			return {};
 
-		const int required = ::MultiByteToWideChar(CP_THREAD_ACP, 0, str.data(), static_cast<int>(str.size()), nullptr, 0);
+		const int required = ::MultiByteToWideChar(CP_UTF8, 0, str.data(), static_cast<int>(str.size()), nullptr, 0);
 		if (0 == required)
 			return {};
 
 		std::wstring str2;
 		str2.resize(required);
-		const int converted = ::MultiByteToWideChar(CP_THREAD_ACP, 0, str.data(), static_cast<int>(str.size()), str2.data(), static_cast<int>(str2.capacity()));
+		const int converted = ::MultiByteToWideChar(CP_UTF8, 0, str.data(), static_cast<int>(str.size()), str2.data(), static_cast<int>(str2.capacity()));
 		if (0 == converted)
 			return {};
 
@@ -103,13 +103,13 @@ namespace fileshare
 		if (str.empty())
 			return {};
 
-		const int required = ::WideCharToMultiByte(CP_THREAD_ACP, 0, str.data(), static_cast<int>(str.size()), nullptr, 0, nullptr, nullptr);
+		const int required = ::WideCharToMultiByte(CP_UTF8, 0, str.data(), static_cast<int>(str.size()), nullptr, 0, nullptr, nullptr);
 		if (0 == required)
 			return {};
 
 		std::string str2;
 		str2.resize(required);
-		const int converted = ::WideCharToMultiByte(CP_THREAD_ACP, 0, str.data(), static_cast<int>(str.size()), str2.data(), static_cast<int>(str2.capacity()), NULL, NULL);
+		const int converted = ::WideCharToMultiByte(CP_UTF8, 0, str.data(), static_cast<int>(str.size()), str2.data(), static_cast<int>(str2.capacity()), NULL, NULL);
 		if (0 == converted)
 			return {};
 

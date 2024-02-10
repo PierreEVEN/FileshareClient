@@ -2,6 +2,7 @@
 
 #include <nlohmann/json.hpp>
 #include <chrono>
+#include <iostream>
 #include <utility>
 
 #include "fileshare/directory.hpp"

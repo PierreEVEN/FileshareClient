@@ -64,7 +64,7 @@ namespace fileshare
 	{
 		MEASURE_DURATION(GetTreeFromPath, "Get tree from " + in_path.generic_string());
 #if WIN32
-		_setmode(_fileno(stdout), _O_U16TEXT);
+		_setmode(_fileno(stdout), _O_WTEXT);
 #endif
 		const auto res = from_path_internal(in_path, parent);
 #if WIN32

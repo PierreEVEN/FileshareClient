@@ -24,21 +24,10 @@ TEST(TransferAdvanced, WeirdNames)
 		std::wstring name;
 		for (size_t i = start; i < end; ++i)
 		{
-			if (forbidden_chars.find_first_of(i) != std::wstring::npos)
+			if (forbidden_chars.find_first_of(static_cast<wchar_t>(i)) != std::wstring::npos)
 				continue;
 			name += static_cast<wchar_t>(i);
 		}
-
-		std::wcout << "name : " << name << std::endl;
-		for (size_t i = 200; i < name.size(); ++i)
-		{
-			std::wcout << "test " << name.substr(0, i) << std::endl;
-			std::wcout << i << ":" << name[i - 1] << std::endl;
-			test_env.edit_file(test_env.get_test_data_dir() / name.substr(0, i) / name.substr(0, i), 10);
-			std::filesystem::remove(test_env.get_test_data_dir() / name.substr(0, i) / name.substr(0, i));
-		}
-
-		std::cout << "encoded : " << fileshare::Url::encode_string(name) << std::endl;
 
 		const auto data1 = test_env.edit_file(test_env.get_test_data_dir() / name / name, 10);
 		

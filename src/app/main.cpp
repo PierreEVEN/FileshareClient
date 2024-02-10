@@ -1,3 +1,5 @@
+#include <corecrt_io.h>
+#include <fcntl.h>
 #include <iostream>
 #include <fstream>
 #include <fileshare/exceptions.hpp>
@@ -727,6 +729,7 @@ void load_options(int argc, char** argv)
 
 int main(int argc, char** argv)
 {
+	/*
     const auto wstr = std::wstring(L"é");
     const auto str = fileshare::Url::wstring_to_utf8(wstr);
     std::wcout << "uni : " << wstr << std::endl;
@@ -742,7 +745,7 @@ int main(int argc, char** argv)
     std::wcout << "decCode : " << (int)deco[0] << std::endl;
 
 	return 0;
-
+	*/
 	fileshare::ShellUtils::init();
 	try
 	{
