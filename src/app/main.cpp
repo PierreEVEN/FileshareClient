@@ -63,10 +63,11 @@ static void require_connection(fileshare::RepositoryConfig& cfg)
 			{
 				if (try_cnt++ < 3)
 					std::cerr << error.what() << " Please try again" << std::endl;
-				else {
-                    std::cerr << "Connection failed !" << std::endl;
-                    throw;
-                }
+				else
+				{
+					std::cerr << "Connection failed !" << std::endl;
+					throw;
+				}
 			}
 		}
 		while (true);
@@ -246,7 +247,10 @@ std::filesystem::path tmp_file(const std::string& name)
 
 void load_options(int argc, char** argv)
 {
-	fileshare::Command root(L"fileshare");
+	fileshare::Command root(L"fileshare", [](auto)
+	{
+		std::cout << "Welcome to fileshare client. Type `fileshare help` for more commands." << std::endl;
+	});
 
 	// Repos status
 	root.add_sub_command({
@@ -582,7 +586,7 @@ void load_options(int argc, char** argv)
 				fileshare::ProgressBar progress_bar(L"Sending local modifications to " + cfg.get_repository(),
 				                                    diffs.get_changes().size());
 				size_t i = 0;
-				for (const auto& change : diffs.get_changes())
+				for (auto& change : diffs.get_changes())
 				{
 					if (fileshare::RepositoryConfig::is_interrupted())
 						throw std::runtime_error("Stopped !");
@@ -653,26 +657,26 @@ void load_options(int argc, char** argv)
 		L"Synchronise this repository with the server. (equivalent to 'fileshare pull push')"
 	});
 
-    // Sync
-    root.add_sub_command({
-                                 L"logout", [&](auto)
-            {
-                try
-                {
-                    const auto cfg_file = fileshare::RepositoryConfig::search_repos_root_or_error(
-                            std::filesystem::current_path());
+	// Sync
+	root.add_sub_command({
+		L"logout", [&](auto)
+		{
+			try
+			{
+				const auto cfg_file = fileshare::RepositoryConfig::search_repos_root_or_error(
+					std::filesystem::current_path());
 
-                    fileshare::RepositoryConfig cfg(cfg_file);
-                    cfg.logout();
-                }
-                catch (const std::exception& e)
-                {
-                    std::cerr << e.what() << std::endl;
-                }
-            },
-                                 {},
-                                 L"Disconnect user')"
-                         });
+				fileshare::RepositoryConfig cfg(cfg_file);
+				cfg.logout();
+			}
+			catch (const std::exception& e)
+			{
+				std::cerr << e.what() << std::endl;
+			}
+		},
+		{},
+		L"Disconnect user')"
+	});
 
 	// Get-Set remote
 	{

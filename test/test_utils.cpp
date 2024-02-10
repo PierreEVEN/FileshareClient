@@ -126,7 +126,8 @@ std::vector<char> FileshareTestEnvironment::edit_file(const std::filesystem::pat
 
     std::ofstream f(file, std::ios_base::binary | std::ios_base::out);
     if (!f.is_open())
-        throw std::runtime_error("Failed to open file");
+        throw std::runtime_error("Failed to open file : " + file.generic_string());
+
     std::vector<char> rand_data(data_inside);
     for (auto& data : rand_data)
         data = static_cast<char>(rand());

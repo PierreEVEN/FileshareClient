@@ -30,6 +30,9 @@ for attr, value in ext_dict.items():
 f.write("\t};\n\n")
 
 f.write("\t[[nodiscard]] inline std::string find(const std::filesystem::path& file) {\n")
+f.write("\t\tfor (const auto chr : file.extension().generic_wstring())\n")
+f.write("\t\t\tif (chr > CHAR_MAX)\n")
+f.write("\t\t\t\treturn \"application/octet-stream\";\n")
 f.write("\t\tauto ext = file.extension().generic_string();\n")
 f.write("\t\tif (ext.empty())\n")
 f.write("\t\t\treturn \"application/octet-stream\";\n")
@@ -38,7 +41,6 @@ f.write("\t\tconst auto& ite = db.find(ext.substr(1));\n")
 f.write("\t\treturn ite == db.end() ? \"application/octet-stream\" : ite->second;\n")
 f.write("\t}\n")
 f.write("}\n")
-
 f.close()
 
 

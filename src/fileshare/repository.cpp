@@ -312,8 +312,7 @@ namespace fileshare
 	{
 		if (!exists(file.get_path()))
 			throw std::runtime_error("The uploaded file does not exists : " + file.get_path().generic_string());
-
-        file.set_last_write_time(std::filesystem::last_write_time(file.get_path()));
+        file.set_last_write_time(last_write_time(file.get_path()));
 
 		constexpr int64_t PACKET_SIZE = 20 * 1024 * 1024;
 

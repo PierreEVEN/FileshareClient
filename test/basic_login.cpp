@@ -7,6 +7,8 @@
 TEST(Login, IsConnected)
 {
 	const auto& test_env = FileshareTestEnvironment::get();
+	if (test_env.get_config().is_connected())
+		test_env.get_config().logout();
 	EXPECT_FALSE(test_env.get_config().is_connected());
 }
 
