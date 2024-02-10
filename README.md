@@ -7,3 +7,4 @@ TODO :
 - Ajouter un lock guard sur le .fileshare
 - Cleanup des auth-token au moment de logout + verif du timestamp des auth-token
 - Ajouter des tests unitaires sur l'ensemble des fonctionnalités
+- Faire en sorte que les string soient 100% encodés sur le serveur (décodage inutileet risqué)
