@@ -1,8 +1,8 @@
-build/
-cmake-build-debug/
-cmake-build-release/
 .idea/
+target/
+Cargo.lock
 
 **.fileshare
+
 
 include/fileshare/mime-db.hpp
