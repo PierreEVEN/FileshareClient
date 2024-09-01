@@ -3,6 +3,7 @@ mod cli;
 mod actions;
 pub mod client_string;
 pub mod content;
+pub mod serialization_utils;
 
 use exitfailure::ExitFailure;
 use std::env;

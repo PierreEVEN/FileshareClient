@@ -1,15 +1,16 @@
 use crate::client_string::ClientString;
-use crate::content::filesystem::RemoteFilesystem;
+use crate::content::filesystem::{LocalFilesystem, RemoteFilesystem};
 use crate::content::item::RemoteItem;
 use exitfailure::ExitFailure;
 use paris::{success, warn};
-use reqwest::Url;
+use reqwest::{Response, Url};
 use rpassword::read_password;
 use serde_derive::{Deserialize, Serialize};
 use std::io::{stdout, Write};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, RwLock};
-use std::{fs, io};
+use std::{env, fs, io};
+use gethostname::gethostname;
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 struct AuthToken {
@@ -112,11 +113,11 @@ impl Repository {
         struct AuthenticationBody {
             username: ClientString,
             password: String,
-            device: String,
+            device: ClientString,
         }
 
         let mut body = AuthenticationBody::default();
-        body.device = String::from("TEST");
+        body.device = ClientString::from_client(format!("Fileshare client - {} ({}) : {}", gethostname().to_str().unwrap(), env::consts::OS, env::current_dir()?.to_str().unwrap()).as_str());
         body.username = match username {
             None => {
                 print!("Username or email : ");
@@ -192,6 +193,13 @@ impl Repository {
             .header("content-authtoken", auth_token))
     }
 
+    pub async fn parse_result(&mut self, response: Response) -> Result<Response, failure::Error> {
+        if response.status().as_u16() == 401 {
+            self.authenticate(None).await?;
+        }
+        Ok(response)
+    }
+
     pub async fn get(&mut self, path: String) -> Result<reqwest::RequestBuilder, failure::Error> {
         let auth_token = match &self.auth_token {
             None => {
@@ -205,9 +213,10 @@ impl Repository {
             .header("content-authtoken", auth_token))
     }
 
-    pub async fn fetch_content(&mut self) -> Result<Arc<RwLock<RemoteFilesystem>>, failure::Error> {
-        let mut content: Vec<RemoteItem> = self.get(self.get_remote_url()? + "/content/").await?
-            .send().await?
+    pub async fn fetch_remote_content(&mut self) -> Result<Arc<RwLock<RemoteFilesystem>>, failure::Error> {
+        let response = self.get(self.get_remote_url()? + "/content/").await?.send().await?;
+
+        let mut content: Vec<RemoteItem> = self.parse_result(response).await?
             .error_for_status()?
             .json().await?;
 
@@ -218,6 +227,22 @@ impl Repository {
             filesystem.write().unwrap().add_item(Arc::new(RwLock::new(item.clone())));
         }
 
+        Ok(filesystem)
+    }
+
+    pub fn fetch_local_content(&mut self) -> Result<Arc<RwLock<LocalFilesystem>>, failure::Error> {
+        let db_path = self.root_path.join(".fileshare").join("database.json");
+        if db_path.exists() {
+            Ok(Arc::new(RwLock::new(serde_json::from_str::<LocalFilesystem>(fs::read_to_string(db_path)?.as_str())?)))
+        }
+        else {
+            warn!("Failed to find stored database");
+            Ok(Arc::new(RwLock::new(LocalFilesystem::default())))
+        }
+    }
+
+    pub fn scan_local_content(&mut self) -> Result<Arc<RwLock<LocalFilesystem>>, failure::Error> {
+        let filesystem = Arc::new(RwLock::new(LocalFilesystem::from_fileshare_root(&self.root_path)?));
         Ok(filesystem)
     }
 }

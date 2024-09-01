@@ -33,6 +33,12 @@ impl ClientString {
         }
     }
 
+    pub fn from_os_string(string: &std::ffi::OsStr) -> Self {
+        Self {
+            _encoded_string_data: Some(Self::encode(string.to_str().unwrap())),
+        }
+    }
+    
     pub fn from_url(string: &str) -> Self {
         Self {
             _encoded_string_data: Some(string.to_string()),

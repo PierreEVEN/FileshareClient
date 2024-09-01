@@ -1,8 +1,13 @@
+use std::fmt::{format, Debug, Formatter};
+use std::fs;
+use std::os::windows::fs::MetadataExt;
+use std::path::PathBuf;
 use crate::client_string::ClientString;
 use crate::content::filesystem::RemoteFilesystem;
 use failure::Error;
 use serde_derive::{Deserialize, Serialize};
 use std::sync::{Arc, RwLock, Weak};
+use crate::serialization_utils::vec_arc_rwlock_serde;
 
 pub trait Item {
     fn is_regular_file(&self) -> bool;
@@ -14,6 +19,16 @@ pub trait Item {
     fn get_children(&self) -> Result<Vec<Arc<RwLock<dyn Item>>>, Error>;
 }
 
+impl Debug for dyn Item {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        f.write_str(format!("{} - {} ({}o - {})",
+                            self.name().plain().unwrap_or(String::from("INVALID/FILE")),
+                            self.timestamp(),
+                            self.size(),
+                            self.mime_type().plain().unwrap_or(String::from("invalid-mimetype")),
+        ).as_str())
+    }
+}
 
 #[derive(Serialize, Deserialize, Default, Debug, Clone)]
 pub struct RemoteItem {
@@ -84,10 +99,105 @@ impl Item for RemoteItem {
         match &self.filesystem {
             None => { Err(failure::err_msg("Filesystem have not been defined")) }
             Some(filesystem) => {
-                Ok(filesystem.upgrade().ok_or(failure::err_msg("Invalid filesystem"))?
-                    .read().unwrap()
-                    .get_children(&self.id)?.clone())
+                match &filesystem.upgrade().ok_or(failure::err_msg("Invalid filesystem"))?
+                    .read() {
+                    Ok(filesystem) => {
+                        let mut children = vec![];
+                        for child in &filesystem.get_children(&self.id)? {
+                            let item: Arc<RwLock<dyn Item>> = child.clone();
+                            children.push(item);
+                        }
+                        Ok(children)
+                    }
+                    Err(_) => { Err(failure::err_msg("Invalid filesystem")) }
+                }
             }
         }
+    }
+}
+
+#[derive(Serialize, Deserialize, Default, Debug, Clone)]
+pub struct LocalItem {
+    name: ClientString,
+    is_regular_file: bool,
+    timestamp: u64,
+    mime_type: Option<ClientString>,
+    size: u64,
+    absolute_path: PathBuf,
+
+    #[serde(skip_deserializing, skip_serializing)]
+    parent: Option<Weak<RwLock<LocalItem>>>,
+
+    #[serde(with = "vec_arc_rwlock_serde")]
+    children: Vec<Arc<RwLock<LocalItem>>>,
+}
+
+impl LocalItem {
+    pub fn from_filesystem(path: &PathBuf, parent: Option<Arc<RwLock<LocalItem>>>) -> Result<Self, Error> {
+        let metadata = fs::metadata(path)?;
+
+        Ok(Self {
+            name: ClientString::from_os_string(path.file_name().ok_or(failure::err_msg("Invalid file name"))?),
+            is_regular_file: metadata.is_file(),
+            timestamp: metadata.last_write_time(),
+            mime_type: if metadata.is_file() {
+                let mime_type = mime_guess::from_path(path);
+                mime_type.first().map(|mime| ClientString::from_client(mime.essence_str()))
+            } else {
+                None
+            },
+            size: metadata.file_size(),
+            absolute_path: path.clone(),
+            parent: parent.map(|parent| Arc::downgrade(&parent)),
+            children: vec![],
+        })
+    }
+
+    pub fn add_child(&mut self, new_child: Arc<RwLock<LocalItem>>) {
+        self.children.push(new_child);
+    }
+}
+
+impl Item for LocalItem {
+    fn is_regular_file(&self) -> bool {
+        self.is_regular_file
+    }
+
+    fn name(&self) -> ClientString {
+        self.name.clone()
+    }
+
+    fn size(&self) -> u64 {
+        self.size
+    }
+
+    fn timestamp(&self) -> u64 {
+        self.timestamp
+    }
+
+    fn mime_type(&self) -> ClientString {
+        match &self.mime_type {
+            None => { ClientString::default() }
+            Some(string) => { string.clone() }
+        }
+    }
+
+    fn get_parent(&self) -> Result<Option<Arc<RwLock<dyn Item>>>, Error> {
+        match &self.parent {
+            None => { Ok(None) }
+            Some(parent) => {
+                let parent: Arc<RwLock<dyn Item>> = parent.upgrade().unwrap();
+                Ok(Some(parent))
+            }
+        }
+    }
+
+    fn get_children(&self) -> Result<Vec<Arc<RwLock<dyn Item>>>, Error> {
+        let mut children = vec![];
+        for child in &self.children {
+            let child: Arc<RwLock<dyn Item>> = child.clone();
+            children.push(child)
+        }
+        Ok(children)
     }
 }
