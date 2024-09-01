@@ -1,13 +1,12 @@
 mod repository;
 mod cli;
 mod actions;
+pub mod client_string;
+pub mod content;
 
 use exitfailure::ExitFailure;
-use reqwest::Url;
-use serde_derive::{Deserialize, Serialize};
+use std::env;
 
-use crate::cli::{FileshareArgs, RootCommands};
-use clap::{Parser};
 use crate::actions::clone::ActionClone;
 use crate::actions::editor::ActionEditor;
 use crate::actions::init::ActionInit;
@@ -18,84 +17,54 @@ use crate::actions::push::ActionPush;
 use crate::actions::remote::ActionRemote;
 use crate::actions::status::ActionStatus;
 use crate::actions::sync::ActionSync;
-
-#[derive(Serialize, Deserialize, Debug)]
-struct CompanyQuote {
-    c: f64,
-    h: f64,
-    l: f64,
-    o: f64,
-    pc: f64,
-    t: i128,
-}
-
-impl CompanyQuote {
-    async fn get(symbol: &String, api_key: &String) -> Result<Self, ExitFailure> {
-        let url = format!(
-            "https://finnhub.io/api/v1/quote?symbol={}&token={}",
-            symbol, api_key
-        );
-
-        let url = Url::parse(&*url)?;
-        let res = reqwest::get(url).await?.json::<CompanyQuote>().await?;
-
-        Ok(res)
-    }
-}
+use crate::cli::{FileshareArgs, RootCommands};
+use clap::Parser;
+use paris::error;
 
 #[tokio::main]
 async fn main() -> Result<(), ExitFailure> {
     let args = FileshareArgs::parse();
+    if env::current_dir()?.join(".fileshare").join("config.lock.json").exists() {
+        error!("A fileshare process is already running here. Please ensure it is stopped then remove the config.lock.json file");
+        return Err(ExitFailure::from(failure::err_msg("A fileshare process is already running here.")));
+    }
 
-    println!("{:?}", args);
-    match args.commands {
-        RootCommands::Clone{repository_url } => {
-            ActionClone::run(repository_url)?;
+    match match args.commands {
+        RootCommands::Clone { repository_url } => {
+            ActionClone::run(repository_url)
         }
         RootCommands::Init => {
-            ActionInit::run()?;
+            ActionInit::run()
         }
         RootCommands::Push => {
-            ActionPush::run()?;
+            ActionPush::run()
         }
         RootCommands::Pull => {
-            ActionPull::run()?;
+            ActionPull::run()
         }
         RootCommands::Sync => {
-            ActionSync::run()?;
+            ActionSync::run()
         }
         RootCommands::Status => {
-            ActionStatus::run()?;
+            ActionStatus::run().await
         }
         RootCommands::Logout => {
-            ActionLogout::run()?;
+            ActionLogout::run().await
         }
-        RootCommands::Login{ name } => {
-            ActionLogin::run(name)?;
+        RootCommands::Login { name } => {
+            ActionLogin::run(name).await
         }
-        RootCommands::Editor{editor } => {
-            ActionEditor::run(editor)?;
+        RootCommands::Editor { editor } => {
+            ActionEditor::run(editor)
         }
-        RootCommands::Remote{remote } => {
-            ActionRemote::run(remote)?;
+        RootCommands::Remote { remote } => {
+            ActionRemote::run(remote)
+        }
+    } {
+        Ok(_) => {}
+        Err(error) => {
+            error!("{:?}", error);
         }
     }
     Ok(())
-    /*
-
-        let api_key = "YOUR API KEY".to_string();
-        let args: Vec<String> = env::args().collect();
-        let mut symbol: String = "AAPL".to_string();
-
-        if args.len() < 2 {
-            println!("Since you didn't specify a company symbol, it has defaulted to AAPL.");
-        } else {
-            symbol = args[1].clone();
-        }
-
-        let res = CompanyQuote::get(&symbol, &api_key).await?;
-        println!("{}'s current stock price: {}", symbol, res.c);
-
-        Ok(())
-        */
 }

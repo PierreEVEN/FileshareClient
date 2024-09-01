@@ -1,11 +1,15 @@
+use std::env;
 use exitfailure::ExitFailure;
+use paris::success;
+use crate::repository::Repository;
 
-pub struct ActionLogin {
-
-}
+pub struct ActionLogin {}
 
 impl ActionLogin {
-    pub fn run(username: String) -> Result<(), ExitFailure> {
-        Ok(())
+    pub async fn run(username: Option<String>) -> Result<Repository, ExitFailure> {
+        let mut repos = Repository::new(env::current_dir()?)?;
+        repos.authenticate(username).await?;
+        success!("Successfully logged in !");
+        Ok(repos)
     }
 }

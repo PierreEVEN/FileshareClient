@@ -28,7 +28,7 @@ pub enum RootCommands {
     Logout,
     /// Generate a new authentication token
     Login {
-        name: String,
+        name: Option<String>,
     },
     /// The text editor (used in case of conflicts)
     Editor {
