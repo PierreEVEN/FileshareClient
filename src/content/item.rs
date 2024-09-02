@@ -1,15 +1,15 @@
-use std::fmt::{format, Debug, Formatter};
-use std::{env, fs};
-use std::any::Any;
-use std::ffi::{OsStr, OsString};
-use std::os::windows::fs::MetadataExt;
-use std::path::PathBuf;
 use crate::client_string::ClientString;
 use crate::content::filesystem::RemoteFilesystem;
+use crate::serialization_utils::vec_arc_rwlock_serde;
 use failure::Error;
 use serde_derive::{Deserialize, Serialize};
+use std::any::Any;
+use std::ffi::OsString;
+use std::fmt::{Debug, Formatter};
+use std::os::windows::fs::MetadataExt;
+use std::path::PathBuf;
 use std::sync::{Arc, RwLock, Weak};
-use crate::serialization_utils::vec_arc_rwlock_serde;
+use std::{env, fs};
 
 pub trait ItemCast: 'static {
     fn as_any(&self) -> &dyn Any;
@@ -25,7 +25,7 @@ impl<T: 'static> ItemCast for T {
     }
 }
 
-pub trait Item: ItemCast {
+pub trait Item: ItemCast + Send + Sync + 'static {
     fn is_regular_file(&self) -> bool;
     fn name(&self) -> ClientString;
     fn size(&self) -> u64;
@@ -158,14 +158,14 @@ pub struct LocalItem {
     relative_path: PathBuf,
 
     #[serde(skip_deserializing, skip_serializing)]
-    parent: Option<Weak<RwLock<LocalItem>>>,
+    parent: Option<Weak<RwLock<dyn Item>>>,
 
     #[serde(with = "vec_arc_rwlock_serde")]
     children: Vec<Arc<RwLock<LocalItem>>>,
 }
 
 impl LocalItem {
-    pub fn from_filesystem(path: &PathBuf, parent: Option<Arc<RwLock<LocalItem>>>) -> Result<Self, Error> {
+    pub fn from_filesystem(path: &PathBuf, parent: Option<Arc<RwLock<dyn Item>>>) -> Result<Self, Error> {
         let metadata = fs::metadata(path)?;
 
         Ok(Self {
@@ -187,6 +187,10 @@ impl LocalItem {
 
     pub fn add_child(&mut self, new_child: Arc<RwLock<LocalItem>>) {
         self.children.push(new_child);
+    }
+
+    pub fn children(&self) -> &Vec<Arc<RwLock<LocalItem>>> {
+        &self.children
     }
 }
 
@@ -218,8 +222,7 @@ impl Item for LocalItem {
         match &self.parent {
             None => { Ok(None) }
             Some(parent) => {
-                let parent: Arc<RwLock<dyn Item>> = parent.upgrade().unwrap();
-                Ok(Some(parent))
+                Ok(Some(parent.upgrade().unwrap()))
             }
         }
     }
@@ -234,6 +237,6 @@ impl Item for LocalItem {
     }
 
     fn path_from_root(&self) -> Result<PathBuf, Error> {
-        Ok(PathBuf::from("/").join(&self.relative_path))
+        Ok(PathBuf::from("./").join(&self.relative_path))
     }
 }

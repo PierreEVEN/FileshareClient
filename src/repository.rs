@@ -1,8 +1,8 @@
 use crate::client_string::ClientString;
-use crate::content::filesystem::{LocalFilesystem, RemoteFilesystem};
+use crate::content::filesystem::{Filesystem, LocalFilesystem, RemoteFilesystem};
 use crate::content::item::{Item, LocalItem, RemoteItem};
 use exitfailure::ExitFailure;
-use paris::{error, success, warn};
+use paris::{info, success, warn};
 use reqwest::{Response, Url};
 use rpassword::read_password;
 use serde_derive::{Deserialize, Serialize};
@@ -14,9 +14,10 @@ use std::{env, fs, io};
 use failure::Error;
 use futures_util::StreamExt;
 use gethostname::gethostname;
-use indicatif::{MultiProgress, ProgressBar, ProgressFinish, ProgressState, ProgressStyle};
+use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
 use std::fs::File;
-use indicatif::style::ProgressTracker;
+use std::time::SystemTime;
+use filetime::{set_file_mtime, FileTime};
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 struct AuthToken {
@@ -45,12 +46,14 @@ pub struct Repository {
 
     #[serde(skip_deserializing, skip_serializing)]
     local_content: Option<Arc<RwLock<LocalFilesystem>>>,
+
+    #[serde(skip_deserializing, skip_serializing)]
+    remote_content: Option<Arc<RwLock<RemoteFilesystem>>>,
 }
 
 fn empty_string() -> String {
     String::new()
 }
-
 
 impl Repository {
     pub fn new(path: PathBuf) -> Result<Self, ExitFailure> {
@@ -241,6 +244,11 @@ impl Repository {
     }
 
     pub async fn fetch_remote_content(&mut self) -> Result<Arc<RwLock<RemoteFilesystem>>, Error> {
+        match &self.remote_content {
+            None => {}
+            Some(remote_content) => { return Ok(remote_content.clone()); }
+        }
+
         let response = self.get(self.get_remote_url()? + "/content/").await?.send().await?;
 
         let mut content: Vec<RemoteItem> = self.parse_result(response).await?
@@ -254,6 +262,7 @@ impl Repository {
             filesystem.write().unwrap().add_item(Arc::new(RwLock::new(item.clone())));
         }
 
+        self.remote_content = Some(filesystem.clone());
         Ok(filesystem)
     }
 
@@ -267,7 +276,7 @@ impl Repository {
         self.local_content = Some(if db_path.exists() {
             Arc::new(RwLock::new(serde_json::from_str::<LocalFilesystem>(fs::read_to_string(db_path)?.as_str())?))
         } else {
-            warn!("Failed to find stored database");
+            paris::info!("Created new local database");
             Arc::new(RwLock::new(LocalFilesystem::default()))
         });
         match &self.local_content {
@@ -281,40 +290,81 @@ impl Repository {
         Ok(filesystem)
     }
 
-    pub async fn download_item(&mut self, item: &RemoteItem) -> Result<(), Error> {
-        let item = &item;
-        if item.is_regular_file() {
-            let downloaded_path = self.root_path.join(".fileshare").join("tmp").join(format!("download_{}", item.id).as_str());
-            let mut data_file = File::create(downloaded_path.clone())?;
-            match self.download_file(item, &mut data_file).await {
-                Ok(_) => {
-                    let final_path = self.root_path.join(item.path_from_root()?);
-                    fs::rename(downloaded_path, final_path)?;
-                    let local_filesystem = &mut *self.fetch_local_content()?.write().unwrap();
-                    match item.get_parent()? {
-                        None => {
-                            local_filesystem.add_item(Arc::new(RwLock::new(LocalItem::from_filesystem(&final_path, None)?)));
+    pub async fn download_item(&mut self, item: Arc<RwLock<dyn Item>>) -> Result<(), Error> {
+        let mut items_to_download = vec![item];
+        while !items_to_download.is_empty() {
+            match items_to_download.pop() {
+                None => { return Err(failure::err_msg("Invalid behavior")); }
+                Some(item) => {
+                    match item.read() {
+                        Ok(item) => {
+                            let item = item.cast::<RemoteItem>();
+                            if item.is_regular_file() {
+                                let downloaded_path = self.root_path.join(".fileshare").join("tmp").join(format!("download_{}", item.id).as_str());
+                                let mut data_file = File::create(downloaded_path.clone())?;
+                                match self.download_file(item, &mut data_file).await {
+                                    Ok(_) => {
+                                        let final_path = self.root_path.join(item.path_from_root()?);
+                                        fs::rename(downloaded_path, final_path.clone())?;
+                                        let ts = FileTime::from_system_time(SystemTime::now());
+                                        set_file_mtime(final_path, ts).unwrap();
+                                        self.update_local_item_state(item as &dyn Item)?;
+                                    }
+                                    Err(err) => {
+                                        if downloaded_path.exists() {
+                                            fs::remove_file(downloaded_path)?;
+                                        }
+                                        return Err(err);
+                                    }
+                                }
+                            } else {
+                                let remote_content = self.fetch_remote_content().await?.clone();
+                                match remote_content.read().unwrap().find_from_path(&item.path_from_root()?)? {
+                                    None => {}
+                                    Some(remote_item_data) => {
+                                        let dir_path = env::current_dir()?.join(item.path_from_root()?);
+                                        fs::create_dir(dir_path.clone())?;
+                                        let ts = FileTime::from_system_time(SystemTime::now());
+                                        set_file_mtime(dir_path, ts).unwrap();
+                                        self.update_local_item_state(item as &dyn Item)?;
+                                        for child in remote_item_data.read().unwrap().get_children()? {
+                                            items_to_download.push(child);
+                                        }
+                                    }
+                                };
+                            }
                         }
-                        Some(parent) => {
-                            local_filesystem.add_item(Arc::new(RwLock::new(
-                                LocalItem::from_filesystem(
-                                    &final_path,
-                                    local_filesystem.find_from_path(&parent.read().unwrap().path_from_root()?)?)?)));
+                        Err(err) => {
+                            return Err(failure::err_msg(format!("Poison error : {}", err)));
                         }
                     }
-                    Ok(())
-                }
-                Err(err) => {
-                    if downloaded_path.exists() {
-                        fs::remove_file(downloaded_path)?;
-                    }
-                    Err(err)
                 }
             }
-        } else {
-            //error!("Todo : handle directory download");
-            Ok(())
         }
+        Ok(())
+    }
+
+    pub fn update_local_item_state(&mut self, item: &dyn Item) -> Result<(), Error> {
+        let item_path = env::current_dir()?.join(item.path_from_root()?);
+
+        match self.fetch_local_content() {
+            Ok(local_filesystem) => {
+                let local_filesystem = &mut *local_filesystem.write().unwrap();
+                match item.get_parent()? {
+                    None => {
+                        local_filesystem.update_item_from_filesystem(Arc::new(RwLock::new(LocalItem::from_filesystem(&item_path, None)?)))?;
+                    }
+                    Some(parent) => {
+                        let found_parent = local_filesystem.find_from_path(&parent.read().unwrap().path_from_root()?)?.clone();
+                        local_filesystem.update_item_from_filesystem(Arc::new(RwLock::new(LocalItem::from_filesystem(&item_path, found_parent)?)))?;
+                    }
+                }
+                Ok(())
+            }
+            Err(err) => { Err(err) }
+        }?;
+
+        Ok(())
     }
 
     async fn download_file(&mut self, item: &RemoteItem, target_container: &mut File) -> Result<(), Error> {
@@ -344,7 +394,7 @@ impl Repository {
         Ok(())
     }
 
-    pub fn remove_local_item(&mut self, item: &Arc<RwLock<dyn Item>>) -> Result<(), Error> {
+    pub fn remove_local_item(&mut self, _item: &Arc<RwLock<dyn Item>>) -> Result<(), Error> {
         todo!()
     }
 }
@@ -352,6 +402,18 @@ impl Repository {
 impl Drop for Repository {
     fn drop(&mut self) {
         Self::create_config_dir(self.root_path.as_path()).ok();
+        if let Some(local_content) = &self.local_content {
+            match serde_json::to_string(&*local_content.read().unwrap()) {
+                Ok(local_db_string) => {
+                    match fs::write(self.root_path.join(".fileshare").join("database.json"), local_db_string.as_str()) {
+                        Ok(_) => {}
+                        Err(_err) => { panic!("Failed to serialize local database : {_err}") }
+                    };
+                }
+                Err(_err) => { panic!("Failed to serialize local database : {_err}") }
+            }
+        }
+
         let serialized = serde_json::to_string(self).expect("Failed to serialize configuration data");
         fs::write(self.root_path.join(".fileshare").join("config.lock.json"), serialized).expect("Unable to write configuration lock file");
         fs::rename(self.root_path.join(".fileshare").join("config.lock.json"), self.root_path.join(".fileshare").join("config.json")).expect("Failed to write configuration file : cannot move");
