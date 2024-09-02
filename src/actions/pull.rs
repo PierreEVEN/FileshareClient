@@ -18,8 +18,8 @@ impl ActionPull {
                 Action::ConflictAddLocalNewer(scanned, remote) => {}
                 Action::ErrorRemoteDowngraded(scanned, remote) => {}
                 Action::LocalUpgraded(scanned, remote) => {}
-                Action::ConflictBothDowngraded(scanned, local) => {}
-                Action::ConflictBothUpgraded(scanned, local) => {}
+                Action::ConflictBothDowngraded(scanned, local, remote) => {}
+                Action::ConflictBothUpgraded(scanned, local, remote) => {}
                 Action::ConflictLocalUpgradedRemoteDowngraded(scanned, local, remote) => {}
                 Action::ConflictAddRemoteNewer(scanned, remote) => {}
                 Action::RemoteUpgraded(scanned, remote) => {
@@ -28,7 +28,7 @@ impl ActionPull {
                 Action::ErrorLocalDowngraded(scanned, remote) => {}
                 Action::ConflictLocalDowngradedRemoteUpgraded(scanned, local, remote) => {}
                 Action::RemoteRemoved(scanned) => {
-                    repos.remove_local_item(scanned)?;
+                    repos.remove_local_item(scanned).await?;
                 }
                 Action::LocalAdded(scanned) => {}
                 Action::LocalRemoved(remote) => {}

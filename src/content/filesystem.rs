@@ -3,8 +3,10 @@ use crate::serialization_utils::vec_arc_rwlock_serde;
 use failure::Error;
 use serde_derive::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
+use std::env;
 use std::path::PathBuf;
 use std::sync::{Arc, RwLock};
+use tokio::fs;
 
 pub trait Filesystem {
     fn get_roots(&self) -> Result<Vec<Arc<RwLock<dyn Item>>>, Error>;
@@ -34,7 +36,6 @@ impl RemoteFilesystem {
             }
         }
         self.items.insert(id, item);
-        self.children.entry(id).or_default().insert(id);
     }
 
     pub fn find_item(&self, id: &u64) -> Option<Arc<RwLock<RemoteItem>>> {
@@ -43,8 +44,11 @@ impl RemoteFilesystem {
 
     pub fn get_children(&self, id: &u64) -> Result<Vec<Arc<RwLock<RemoteItem>>>, Error> {
         let mut children = vec![];
-        for child in self.children.get(id).ok_or(failure::err_msg("Cannot find parent item"))? {
-            children.push(self.items.get(child).ok_or(failure::err_msg("Cannot find child item"))?.clone());
+
+        if let Some(children_set) = self.children.get(id) {
+            for child in children_set {
+                children.push(self.items.get(child).ok_or(failure::err_msg("Cannot find child item"))?.clone());
+            }
         }
         Ok(children)
     }
@@ -175,6 +179,33 @@ impl LocalFilesystem {
             }
         }
         Ok(None)
+    }
+
+    pub async fn remove_item(&mut self, item: &LocalItem) -> Result<(), Error> {
+        let item_path = env::current_dir()?.join(item.path_from_root()?);
+        if item_path.exists() {
+            if item_path.is_file() {
+                fs::remove_file(item_path).await?;
+            } else {
+                fs::remove_dir_all(item_path).await?;
+            }
+        }
+
+        match item.get_parent()? {
+            None => {
+                for (i, root) in self.roots.iter().enumerate() {
+                    if root.read().unwrap().name().encoded() == item.name().encoded() {
+                        self.roots.remove(i);
+                        break;
+                    }
+                }
+            }
+            Some(parent) => {
+                parent.write().unwrap().cast_mut::<LocalItem>().remove_child(&item.name())?;
+            }
+        }
+
+        Ok(())
     }
 }
 

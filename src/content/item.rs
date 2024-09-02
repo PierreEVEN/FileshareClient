@@ -10,6 +10,8 @@ use std::os::windows::fs::MetadataExt;
 use std::path::PathBuf;
 use std::sync::{Arc, RwLock, Weak};
 use std::{env, fs};
+use std::time::UNIX_EPOCH;
+use filetime::FileTime;
 
 pub trait ItemCast: 'static {
     fn as_any(&self) -> &dyn Any;
@@ -47,8 +49,8 @@ impl dyn Item {
 
 impl Debug for dyn Item {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        f.write_str(format!("{:?} - {} ({}o - {})",
-                            self.path_from_root().unwrap_or(PathBuf::from("INVALID-PATH")),
+        f.write_str(format!("'{}' - {} ({}o - {})",
+                            self.name().plain().unwrap_or(String::from("Invalid/Name")),
                             self.timestamp(),
                             self.size(),
                             self.mime_type().plain().unwrap_or(String::from("invalid-mimetype")),
@@ -131,6 +133,7 @@ impl Item for RemoteItem {
                         let mut children = vec![];
                         for child in &filesystem.get_children(&self.id)? {
                             let item: Arc<RwLock<dyn Item>> = child.clone();
+
                             children.push(item);
                         }
                         Ok(children)
@@ -168,10 +171,12 @@ impl LocalItem {
     pub fn from_filesystem(path: &PathBuf, parent: Option<Arc<RwLock<dyn Item>>>) -> Result<Self, Error> {
         let metadata = fs::metadata(path)?;
 
+        println!("Local time : {}", metadata.modified()?.duration_since(UNIX_EPOCH)?.as_millis() as u64);
+        
         Ok(Self {
             name: ClientString::from_os_string(path.file_name().ok_or(failure::err_msg("Invalid file name"))?),
             is_regular_file: metadata.is_file(),
-            timestamp: metadata.last_write_time(),
+            timestamp: metadata.modified()?.duration_since(UNIX_EPOCH)?.as_millis() as u64,
             mime_type: if metadata.is_file() {
                 let mime_type = mime_guess::from_path(path);
                 mime_type.first().map(|mime| ClientString::from_client(mime.essence_str()))
@@ -191,6 +196,16 @@ impl LocalItem {
 
     pub fn children(&self) -> &Vec<Arc<RwLock<LocalItem>>> {
         &self.children
+    }
+
+    pub fn remove_child(&mut self, name: &ClientString) -> Result<(), Error> {
+        for (i, child) in self.children.iter().enumerate() {
+            if child.read().unwrap().name.encoded() == name.encoded() {
+                self.children.remove(i);
+                return Ok(());
+            }
+        }
+        Err(failure::err_msg("File not found"))
     }
 }
 

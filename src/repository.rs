@@ -16,7 +16,9 @@ use futures_util::StreamExt;
 use gethostname::gethostname;
 use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
 use std::fs::File;
-use std::time::SystemTime;
+use std::ops::Add;
+use std::os::windows::fs::MetadataExt;
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use filetime::{set_file_mtime, FileTime};
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -306,8 +308,11 @@ impl Repository {
                                     Ok(_) => {
                                         let final_path = self.root_path.join(item.path_from_root()?);
                                         fs::rename(downloaded_path, final_path.clone())?;
-                                        let ts = FileTime::from_system_time(SystemTime::now());
-                                        set_file_mtime(final_path, ts).unwrap();
+
+                                        let timestamp = item.timestamp.unwrap();
+                                        println!("\nFILE : {} => {} / => {}",final_path.display() , final_path.exists(), final_path.is_file());
+                                        
+                                        File::open(final_path)?.set_modified(UNIX_EPOCH.add(Duration::from_millis(timestamp)))?;
                                         self.update_local_item_state(item as &dyn Item)?;
                                     }
                                     Err(err) => {
@@ -324,8 +329,6 @@ impl Repository {
                                     Some(remote_item_data) => {
                                         let dir_path = env::current_dir()?.join(item.path_from_root()?);
                                         fs::create_dir(dir_path.clone())?;
-                                        let ts = FileTime::from_system_time(SystemTime::now());
-                                        set_file_mtime(dir_path, ts).unwrap();
                                         self.update_local_item_state(item as &dyn Item)?;
                                         for child in remote_item_data.read().unwrap().get_children()? {
                                             items_to_download.push(child);
@@ -394,8 +397,15 @@ impl Repository {
         Ok(())
     }
 
-    pub fn remove_local_item(&mut self, _item: &Arc<RwLock<dyn Item>>) -> Result<(), Error> {
-        todo!()
+    pub async fn remove_local_item(&mut self, item_ref: &Arc<RwLock<dyn Item>>) -> Result<(), Error> {
+        match self.fetch_local_content() {
+            Ok(local_filesystem) => {
+                let local_filesystem = &mut *local_filesystem.write().unwrap();
+                local_filesystem.remove_item(&item_ref.read().unwrap().cast::<LocalItem>()).await?;
+            }
+            _ => {}
+        }
+        Ok(())
     }
 }
 

@@ -28,10 +28,10 @@ pub enum Action {
     ErrorRemoteDowngraded(Arc<RwLock<dyn Item>>, Arc<RwLock<dyn Item>>),
     ///scanned - remote : Scanned upgraded (#upload)
     LocalUpgraded(Arc<RwLock<dyn Item>>, Arc<RwLock<dyn Item>>),
-    ///scanned - local : CONFLICT : Both downgraded
-    ConflictBothDowngraded(Arc<RwLock<dyn Item>>, Arc<RwLock<dyn Item>>),
-    ///scanned - local : CONFLICT : Both upgraded
-    ConflictBothUpgraded(Arc<RwLock<dyn Item>>, Arc<RwLock<dyn Item>>),
+    ///scanned - local - remote : CONFLICT : Both downgraded
+    ConflictBothDowngraded(Arc<RwLock<dyn Item>>, Arc<RwLock<dyn Item>>, Arc<RwLock<dyn Item>>),
+    ///scanned - local - remote : CONFLICT : Both upgraded
+    ConflictBothUpgraded(Arc<RwLock<dyn Item>>, Arc<RwLock<dyn Item>>, Arc<RwLock<dyn Item>>),
     ///scanned - local - remote : Local upgraded / remote downgraded
     ConflictLocalUpgradedRemoteDowngraded(Arc<RwLock<dyn Item>>, Arc<RwLock<dyn Item>>, Arc<RwLock<dyn Item>>),
     ///scanned - remote : CONFLICT : Local item was added on both side, but remote is newer
@@ -107,10 +107,10 @@ impl Diff {
                                 self.actions.push(Action::LocalUpgraded(scanned_item_ref.clone(), remote_item_ref.clone()));
                             } else if local_item.timestamp() > scanned_item.timestamp() {
                                 // CONFLICT : Both downgraded
-                                self.actions.push(Action::ConflictBothDowngraded(scanned_item_ref.clone(), local_item_ref.clone()));
+                                self.actions.push(Action::ConflictBothDowngraded(scanned_item_ref.clone(), local_item_ref.clone(), remote_item_ref.clone()));
                             } else if local_item.timestamp() < remote_item.timestamp() {
                                 // CONFLICT : Both upgraded
-                                self.actions.push(Action::ConflictBothUpgraded(scanned_item_ref.clone(), local_item_ref.clone()));
+                                self.actions.push(Action::ConflictBothUpgraded(scanned_item_ref.clone(), local_item_ref.clone(), remote_item_ref.clone()));
                             } else if local_item.timestamp() > remote_item.timestamp() {
                                 // CONFLICT : Local upgraded / remote downgraded
                                 self.actions.push(Action::ConflictLocalUpgradedRemoteDowngraded(scanned_item_ref.clone(), local_item_ref.clone(), remote_item_ref.clone()));
@@ -135,10 +135,10 @@ impl Diff {
                                 self.actions.push(Action::ErrorLocalDowngraded(scanned_item_ref.clone(), remote_item_ref.clone()));
                             } else if local_item.timestamp() < scanned_item.timestamp() {
                                 // CONFLICT : Both upgraded
-                                self.actions.push(Action::ConflictBothUpgraded(scanned_item_ref.clone(), local_item_ref.clone()));
+                                self.actions.push(Action::ConflictBothUpgraded(scanned_item_ref.clone(), local_item_ref.clone(), remote_item_ref.clone()));
                             } else if local_item.timestamp() > remote_item.timestamp() {
                                 // CONFLICT : Both downgraded
-                                self.actions.push(Action::ConflictBothDowngraded(scanned_item_ref.clone(), local_item_ref.clone()));
+                                self.actions.push(Action::ConflictBothDowngraded(scanned_item_ref.clone(), local_item_ref.clone(), remote_item_ref.clone()));
                             } else if local_item.timestamp() < remote_item.timestamp() {
                                 // CONFLICT : Local downgraded / remote upgraded
                                 self.actions.push(Action::ConflictLocalDowngradedRemoteUpgraded(scanned_item_ref.clone(), local_item_ref.clone(), remote_item_ref.clone()));
@@ -168,6 +168,12 @@ impl Diff {
                     self.actions.push(Action::LocalRemoved(remote_item_ref.clone()));
                 } else {
                     // was added on remote (#download)
+
+                    if remote_item_ref.read().unwrap().name().plain()? == "Media" {
+                        println!("DEBUG : \nscanned = {:?}\n\n key = {:?}", scanned.keys(), key);
+                    }
+
+
                     self.actions.push(Action::RemoteAdded(remote_item_ref.clone()));
                 }
             }
@@ -181,14 +187,12 @@ impl Diff {
         }
         for (key, scanned_item_ref) in &scanned {
             if let Some(remote_item_ref) = remote.get(key) {
-                match local.get(key) {
-                    None => {}
-                    Some(local_item_ref) => {
-                        self.compare(
-                            sort_items_to_set(&scanned_item_ref.read().unwrap().get_children()?),
-                            sort_items_to_set(&local_item_ref.read().unwrap().get_children()?),
-                            sort_items_to_set(&remote_item_ref.read().unwrap().get_children()?))?
-                    }
+                if let Some(local_item_ref) = local.get(key) {
+
+                    self.compare(
+                        sort_items_to_set(&scanned_item_ref.read().unwrap().get_children()?),
+                        sort_items_to_set(&local_item_ref.read().unwrap().get_children()?),
+                        sort_items_to_set(&remote_item_ref.read().unwrap().get_children()?))?
                 }
             }
         }
