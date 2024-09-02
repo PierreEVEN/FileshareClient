@@ -1,5 +1,7 @@
 use std::fmt::{format, Debug, Formatter};
-use std::fs;
+use std::{env, fs};
+use std::any::Any;
+use std::ffi::{OsStr, OsString};
 use std::os::windows::fs::MetadataExt;
 use std::path::PathBuf;
 use crate::client_string::ClientString;
@@ -9,7 +11,21 @@ use serde_derive::{Deserialize, Serialize};
 use std::sync::{Arc, RwLock, Weak};
 use crate::serialization_utils::vec_arc_rwlock_serde;
 
-pub trait Item {
+pub trait ItemCast: 'static {
+    fn as_any(&self) -> &dyn Any;
+    fn as_any_mut(&mut self) -> &mut dyn Any;
+}
+
+impl<T: 'static> ItemCast for T {
+    fn as_any(&self) -> &dyn Any {
+        self
+    }
+    fn as_any_mut(&mut self) -> &mut dyn Any {
+        self
+    }
+}
+
+pub trait Item: ItemCast {
     fn is_regular_file(&self) -> bool;
     fn name(&self) -> ClientString;
     fn size(&self) -> u64;
@@ -17,12 +33,22 @@ pub trait Item {
     fn mime_type(&self) -> ClientString;
     fn get_parent(&self) -> Result<Option<Arc<RwLock<dyn Item>>>, Error>;
     fn get_children(&self) -> Result<Vec<Arc<RwLock<dyn Item>>>, Error>;
+    fn path_from_root(&self) -> Result<PathBuf, Error>;
+}
+
+impl dyn Item {
+    pub fn cast<U: Item + 'static>(&self) -> &U {
+        self.as_any().downcast_ref::<U>().unwrap()
+    }
+    pub fn cast_mut<U: Item + 'static>(&mut self) -> &mut U {
+        self.as_any_mut().downcast_mut::<U>().unwrap()
+    }
 }
 
 impl Debug for dyn Item {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        f.write_str(format!("{} - {} ({}o - {})",
-                            self.name().plain().unwrap_or(String::from("INVALID/FILE")),
+        f.write_str(format!("{:?} - {} ({}o - {})",
+                            self.path_from_root().unwrap_or(PathBuf::from("INVALID-PATH")),
                             self.timestamp(),
                             self.size(),
                             self.mime_type().plain().unwrap_or(String::from("invalid-mimetype")),
@@ -43,7 +69,7 @@ pub struct RemoteItem {
     pub size: Option<u64>,
     pub mimetype: Option<ClientString>,
     pub timestamp: Option<u64>,
-    pub absolute_path: Option<ClientString>,
+    pub absolute_path: ClientString,
     pub open_upload: Option<bool>,
 
     #[serde(skip_deserializing, skip_serializing)]
@@ -114,6 +140,12 @@ impl Item for RemoteItem {
             }
         }
     }
+
+    fn path_from_root(&self) -> Result<PathBuf, Error> {
+        let mut path_string = OsString::from(".");
+        path_string.push(PathBuf::from(self.absolute_path.plain()?.as_str()).into_os_string());
+        Ok(PathBuf::from(path_string))
+    }
 }
 
 #[derive(Serialize, Deserialize, Default, Debug, Clone)]
@@ -123,7 +155,7 @@ pub struct LocalItem {
     timestamp: u64,
     mime_type: Option<ClientString>,
     size: u64,
-    absolute_path: PathBuf,
+    relative_path: PathBuf,
 
     #[serde(skip_deserializing, skip_serializing)]
     parent: Option<Weak<RwLock<LocalItem>>>,
@@ -147,7 +179,7 @@ impl LocalItem {
                 None
             },
             size: metadata.file_size(),
-            absolute_path: path.clone(),
+            relative_path: pathdiff::diff_paths(path, env::current_dir()?).ok_or(failure::err_msg("Failed to get relative path"))?,
             parent: parent.map(|parent| Arc::downgrade(&parent)),
             children: vec![],
         })
@@ -199,5 +231,9 @@ impl Item for LocalItem {
             children.push(child)
         }
         Ok(children)
+    }
+
+    fn path_from_root(&self) -> Result<PathBuf, Error> {
+        Ok(PathBuf::from("/").join(&self.relative_path))
     }
 }

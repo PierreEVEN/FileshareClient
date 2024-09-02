@@ -41,7 +41,7 @@ async fn main() -> Result<(), ExitFailure> {
             ActionPush::run()
         }
         RootCommands::Pull => {
-            ActionPull::run()
+            ActionPull::run().await
         }
         RootCommands::Sync => {
             ActionSync::run()

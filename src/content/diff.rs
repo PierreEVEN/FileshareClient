@@ -1,8 +1,10 @@
 use std::collections::HashMap;
+use std::env;
 use std::sync::{Arc, RwLock};
 use failure::Error;
 use crate::content::filesystem::Filesystem;
-use crate::content::item::Item;
+use crate::content::item::{Item, LocalItem, RemoteItem};
+use crate::repository::Repository;
 
 #[derive(Debug, Clone, Default)]
 pub struct Diff {
@@ -29,6 +31,12 @@ pub enum Action {
 }
 
 impl Diff {
+    pub async fn from_repository(repository: &mut Repository) -> Result<Self, Error> {
+        Diff::new(&*repository.scan_local_content()?.read().unwrap(),
+                  &*repository.fetch_local_content()?.read().unwrap(),
+                  &*repository.fetch_remote_content().await?.read().unwrap())
+    }
+
     pub fn new(scanned: &dyn Filesystem, local: &dyn Filesystem, remote: &dyn Filesystem) -> Result<Self, Error> {
         let mut diff = Self::default();
         diff.compare(sort_items_to_set(&scanned.get_roots()?),
@@ -40,7 +48,7 @@ impl Diff {
     pub fn actions(&self) -> &Vec<Action> {
         &self.actions
     }
-    
+
     fn compare(&mut self, scanned: HashMap<String, Arc<RwLock<dyn Item>>>, local: HashMap<String, Arc<RwLock<dyn Item>>>, remote: HashMap<String, Arc<RwLock<dyn Item>>>) -> Result<(), Error> {
         for (key, item) in &scanned {
             if !local.contains_key(key) {

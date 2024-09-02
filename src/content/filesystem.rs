@@ -94,6 +94,23 @@ impl LocalFilesystem {
         }
         Ok(())
     }
+
+    pub fn add_item(&mut self, item: Arc<RwLock<LocalItem>>) -> Result<(), Error> {
+        let item_copy = item.clone();
+        match &item.read().unwrap().get_parent()? {
+            None => {self.roots.push(item_copy)}
+            Some(parent) => {
+                parent.write().unwrap().cast_mut::<LocalItem>().add_child(item_copy);
+            }
+        };
+        Ok(())
+    }
+
+
+    pub fn find_from_path(&mut self, path: &PathBuf) -> Result<Option<Arc<RwLock<LocalItem>>>, Error> {
+        todo!();
+        Ok(None)
+    }
 }
 
 impl Filesystem for LocalFilesystem {
