@@ -2,7 +2,7 @@ use crate::client_string::ClientString;
 use crate::content::filesystem::{Filesystem, LocalFilesystem, RemoteFilesystem};
 use crate::content::item::{Item, LocalItem, RemoteItem};
 use exitfailure::ExitFailure;
-use paris::{info, success, warn};
+use paris::{success, warn};
 use reqwest::{Response, Url};
 use rpassword::read_password;
 use serde_derive::{Deserialize, Serialize};
@@ -17,9 +17,7 @@ use gethostname::gethostname;
 use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
 use std::fs::File;
 use std::ops::Add;
-use std::os::windows::fs::MetadataExt;
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
-use filetime::{set_file_mtime, FileTime};
+use std::time::{Duration, UNIX_EPOCH};
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 struct AuthToken {
@@ -307,12 +305,12 @@ impl Repository {
                                 match self.download_file(item, &mut data_file).await {
                                     Ok(_) => {
                                         let final_path = self.root_path.join(item.path_from_root()?);
+
                                         fs::rename(downloaded_path, final_path.clone())?;
 
                                         let timestamp = item.timestamp.unwrap();
-                                        println!("\nFILE : {} => {} / => {}",final_path.display() , final_path.exists(), final_path.is_file());
+                                        File::options().write(true).open(final_path)?.set_modified(UNIX_EPOCH.add(Duration::from_millis(timestamp)))?;
                                         
-                                        File::open(final_path)?.set_modified(UNIX_EPOCH.add(Duration::from_millis(timestamp)))?;
                                         self.update_local_item_state(item as &dyn Item)?;
                                     }
                                     Err(err) => {

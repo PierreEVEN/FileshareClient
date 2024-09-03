@@ -171,8 +171,6 @@ impl LocalItem {
     pub fn from_filesystem(path: &PathBuf, parent: Option<Arc<RwLock<dyn Item>>>) -> Result<Self, Error> {
         let metadata = fs::metadata(path)?;
 
-        println!("Local time : {}", metadata.modified()?.duration_since(UNIX_EPOCH)?.as_millis() as u64);
-        
         Ok(Self {
             name: ClientString::from_os_string(path.file_name().ok_or(failure::err_msg("Invalid file name"))?),
             is_regular_file: metadata.is_file(),

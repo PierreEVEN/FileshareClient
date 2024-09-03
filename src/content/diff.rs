@@ -74,6 +74,23 @@ impl Diff {
     }
 
     fn compare(&mut self, scanned: HashMap<String, Arc<RwLock<dyn Item>>>, local: HashMap<String, Arc<RwLock<dyn Item>>>, remote: HashMap<String, Arc<RwLock<dyn Item>>>) -> Result<(), Error> {
+        let mut found = false;
+        for key in scanned.keys() {
+            println!("{}", key);
+            if key.starts_with("Test") {
+                found = true;
+            }
+        }
+        for key in remote.keys() {
+            println!("{}", key);
+            if key.starts_with("Test") {
+                found = true;
+            }
+        }
+        if !found {
+            return Ok(());
+        }
+
         for (key, scanned_item_ref) in &scanned {
             if let Some(remote_item_ref) = remote.get(key) {
                 // The object exists on local scanned filesystem and remote
@@ -185,10 +202,10 @@ impl Diff {
                 self.actions.push(Action::RemovedOnBothSides(local_item_ref.clone()));
             }
         }
+        return Ok(());
         for (key, scanned_item_ref) in &scanned {
             if let Some(remote_item_ref) = remote.get(key) {
                 if let Some(local_item_ref) = local.get(key) {
-
                     self.compare(
                         sort_items_to_set(&scanned_item_ref.read().unwrap().get_children()?),
                         sort_items_to_set(&local_item_ref.read().unwrap().get_children()?),

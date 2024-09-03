@@ -1,6 +1,7 @@
 use std::fmt::{Debug, Display, Formatter};
 use serde_derive::{Deserialize, Serialize};
 use urlencoding::{decode, encode};
+use percent_encoding_rfc3986::{utf8_percent_encode, percent_decode, AsciiSet, CONTROLS, percent_decode_str};
 
 #[derive(Serialize, Deserialize, Clone, Default)]
 pub struct ClientString {
@@ -46,11 +47,12 @@ impl ClientString {
     }
 
     pub fn encode(decoded: &str) -> String {
-        encode(decoded).to_string()
+        const FRAGMENT: &AsciiSet = &CONTROLS.add(b' ').add(b'"').add(b'<').add(b'>').add(b'`').add(b'&');
+        utf8_percent_encode(decoded, FRAGMENT).to_string()
     }
 
     pub fn decode(encoded: &str) -> Result<String, failure::Error> {
-        Ok(decode(encoded)?.to_string())
+        Ok(percent_decode_str(encoded).or(Err(failure::err_msg("Failed to decode input string")))?.decode_utf8()?.to_string())
     }
 
     pub fn plain(&self) -> Result<String, failure::Error> {
