@@ -85,7 +85,7 @@ impl RemoteFilesystem {
             }
         }
 
-        Err(failure::err_msg(format!("File {} not found", path.display())))
+        Err(failure::err_msg(format!("File {} not found in remote filesystem", path.display())))
     }
 }
 
@@ -224,6 +224,10 @@ impl LocalFilesystem {
             }
             Self::fix_parents_for(item_ref);
         }
+    }
+    
+    pub fn add_to_root(&mut self, new_item: Arc<RwLock<LocalItem>>) {
+        self.roots.push(new_item);
     }
 }
 

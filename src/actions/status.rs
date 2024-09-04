@@ -13,7 +13,7 @@ impl ActionStatus {
 
         if diff.actions().is_empty() {
             success!("Nothing to do !");
-           return Ok(repos);
+            return Ok(repos);
         }
 
         println!(" 🖥️💾☁️| [Local file - Saved sate - Remote file]");
@@ -103,7 +103,9 @@ impl ActionStatus {
             }
         }
 
-        repos.apply_actions(&actions).await?;
+        if !actions.is_empty() {
+            repos.apply_actions(&actions).await?;
+        }
 
         Ok(repos)
     }
