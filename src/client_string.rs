@@ -1,7 +1,6 @@
-use std::fmt::{Debug, Display, Formatter};
+use percent_encoding_rfc3986::{percent_decode_str, utf8_percent_encode, AsciiSet, CONTROLS};
 use serde_derive::{Deserialize, Serialize};
-use urlencoding::{decode, encode};
-use percent_encoding_rfc3986::{utf8_percent_encode, percent_decode, AsciiSet, CONTROLS, percent_decode_str};
+use std::fmt::{Debug, Display, Formatter};
 
 #[derive(Serialize, Deserialize, Clone, Default)]
 pub struct ClientString {

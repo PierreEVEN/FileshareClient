@@ -9,9 +9,8 @@ use std::fmt::{Debug, Formatter};
 use std::os::windows::fs::MetadataExt;
 use std::path::PathBuf;
 use std::sync::{Arc, RwLock, Weak};
-use std::{env, fs};
 use std::time::UNIX_EPOCH;
-use filetime::FileTime;
+use std::{env, fs};
 
 pub trait ItemCast: 'static {
     fn as_any(&self) -> &dyn Any;
@@ -102,7 +101,7 @@ impl Item for RemoteItem {
     }
 
     fn mime_type(&self) -> ClientString {
-        self.mimetype.clone().unwrap_or(ClientString::default())
+        self.mimetype.clone().unwrap_or_default()
     }
 
     fn get_parent(&self) -> Result<Option<Arc<RwLock<dyn Item>>>, Error> {
@@ -170,7 +169,6 @@ pub struct LocalItem {
 impl LocalItem {
     pub fn from_filesystem(path: &PathBuf, parent: Option<Arc<RwLock<dyn Item>>>) -> Result<Self, Error> {
         let metadata = fs::metadata(path)?;
-
         Ok(Self {
             name: ClientString::from_os_string(path.file_name().ok_or(failure::err_msg("Invalid file name"))?),
             is_regular_file: metadata.is_file(),
@@ -205,6 +203,10 @@ impl LocalItem {
         }
         Err(failure::err_msg("File not found"))
     }
+
+    pub fn set_parent(&mut self, parent: &Arc<RwLock<dyn Item>>) {
+        self.parent = Some(Arc::downgrade(parent));
+    }
 }
 
 impl Item for LocalItem {
@@ -233,9 +235,11 @@ impl Item for LocalItem {
 
     fn get_parent(&self) -> Result<Option<Arc<RwLock<dyn Item>>>, Error> {
         match &self.parent {
-            None => { Ok(None) }
+            None => {
+                Ok(None)
+            }
             Some(parent) => {
-                Ok(Some(parent.upgrade().unwrap()))
+                Ok(parent.upgrade())
             }
         }
     }

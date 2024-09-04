@@ -1,13 +1,13 @@
 use crate::cli::EditorCommands;
 use crate::repository::Repository;
-use exitfailure::ExitFailure;
 use paris::{info, warn};
 use std::env;
+use failure::Error;
 
 pub struct ActionEditor {}
 
 impl ActionEditor {
-    pub fn run(subcommand: Option<EditorCommands>) -> Result<Repository, ExitFailure>
+    pub fn run(subcommand: Option<EditorCommands>) -> Result<Repository, Error>
     {
         Ok(match subcommand {
         None => {

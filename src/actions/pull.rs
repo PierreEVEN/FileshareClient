@@ -1,44 +1,38 @@
 use crate::content::diff::{Action, Diff};
 use crate::repository::Repository;
-use exitfailure::ExitFailure;
 use std::env;
+use failure::Error;
 
 pub struct ActionPull {}
 
 impl ActionPull {
-    pub async fn run() -> Result<Repository, ExitFailure> {
+    pub async fn run() -> Result<Repository, Error> {
         let mut repos = Repository::new(env::current_dir()?)?;
         let diff = Diff::from_repository(&mut repos).await?;
 
+        let mut actions = vec![];
         for action in diff.actions() {
             match action {
-                Action::ResyncLocal(scanned) => {
-                    repos.update_local_item_state(&*scanned.read().unwrap())?;
-                }
-                Action::ConflictAddLocalNewer(scanned, remote) => {}
-                Action::ErrorRemoteDowngraded(scanned, remote) => {}
-                Action::LocalUpgraded(scanned, remote) => {}
-                Action::ConflictBothDowngraded(scanned, local, remote) => {}
-                Action::ConflictBothUpgraded(scanned, local, remote) => {}
-                Action::ConflictLocalUpgradedRemoteDowngraded(scanned, local, remote) => {}
-                Action::ConflictAddRemoteNewer(scanned, remote) => {}
-                Action::RemoteUpgraded(scanned, remote) => {
-                    repos.download_item(remote.clone()).await?;
-                }
-                Action::ErrorLocalDowngraded(scanned, remote) => {}
-                Action::ConflictLocalDowngradedRemoteUpgraded(scanned, local, remote) => {}
-                Action::RemoteRemoved(scanned) => {
-                    repos.remove_local_item(scanned).await?;
-                }
-                Action::LocalAdded(scanned) => {}
-                Action::LocalRemoved(remote) => {}
-                Action::RemoteAdded(remote) => {
-                    repos.download_item(remote.clone()).await?;
-                }
-                Action::RemovedOnBothSides(local) => {}
+                Action::ResyncLocal(_) => { actions.push(action.clone()); }
+                Action::ConflictAddLocalNewer(_, _) => {}
+                Action::ErrorRemoteDowngraded(_, _) => { actions.push(action.clone()) }
+                Action::LocalUpgraded(_, _) => {}
+                Action::ConflictBothDowngraded(_, _, _) => { actions.push(action.clone()) }
+                Action::ConflictBothUpgraded(_, _, _) => { actions.push(action.clone()) }
+                Action::ConflictLocalUpgradedRemoteDowngraded(_, _, _) => { actions.push(action.clone()) }
+                Action::ConflictAddRemoteNewer(_, _) => { actions.push(action.clone()) }
+                Action::RemoteUpgraded(_, _) => { actions.push(action.clone()) }
+                Action::ErrorLocalDowngraded(_, _) => {}
+                Action::ConflictLocalDowngradedRemoteUpgraded(_, _, _) => { actions.push(action.clone()) }
+                Action::RemoteRemoved(_) => { actions.push(action.clone()) }
+                Action::LocalAdded(_) => {}
+                Action::LocalRemoved(_, _) => {}
+                Action::RemoteAdded(_) => { actions.push(action.clone()) }
+                Action::RemovedOnBothSides(_) => { actions.push(action.clone()); }
             }
         }
 
+        repos.apply_actions(&actions).await?;
 
         Ok(repos)
     }

@@ -1,24 +1,28 @@
 use crate::content::diff::{Action, Diff};
 use crate::repository::Repository;
-use exitfailure::ExitFailure;
 use std::env;
-use paris::{error, log, success};
+use failure::Error;
+use paris::success;
 
 pub struct ActionStatus {}
 
 impl ActionStatus {
-    pub async fn run() -> Result<Repository, ExitFailure> {
+    pub async fn run() -> Result<Repository, Error> {
         let mut repos = Repository::new(env::current_dir()?)?;
         let diff = Diff::from_repository(&mut repos).await?;
 
+        if diff.actions().is_empty() {
+            success!("Nothing to do !");
+           return Ok(repos);
+        }
 
         println!(" 🖥️💾☁️| [Local file - Saved sate - Remote file]");
-
+        let mut actions = vec![];
         for action in diff.actions() {
             match action {
                 Action::ResyncLocal(scanned) => {
                     let scanned = scanned.read().unwrap();
-                    repos.update_local_item_state(&*scanned)?;
+                    actions.push(action.clone());
                     println!(" ⚊ . ⚊ | {} - The file exists on both side but was not tracked.", scanned.path_from_root()?.display());
                 }
                 Action::ConflictAddLocalNewer(scanned, remote) => {
@@ -83,7 +87,7 @@ impl ActionStatus {
                     let scanned = scanned.read().unwrap();
                     println!(" + . . | {} - ➕ This file has been added locally.", scanned.path_from_root()?.display());
                 }
-                Action::LocalRemoved(remote) => {
+                Action::LocalRemoved(_, remote) => {
                     let remote = remote.read().unwrap();
                     println!(" X ⚊ ⚊ | {} - ✖️ The file have been deleted locally.", remote.path_from_root()?.display());
                 }
@@ -93,10 +97,13 @@ impl ActionStatus {
                 }
                 Action::RemovedOnBothSides(local) => {
                     let local = local.read().unwrap();
+                    actions.push(action.clone());
                     println!(" X ⚊ X | {} - ➕ This file was removed on both sides.", local.path_from_root()?.display());
                 }
             }
         }
+
+        repos.apply_actions(&actions).await?;
 
         Ok(repos)
     }

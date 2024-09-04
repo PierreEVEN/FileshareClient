@@ -85,8 +85,7 @@ impl RemoteFilesystem {
             }
         }
 
-
-        Err(failure::err_msg("File not found"))
+        Err(failure::err_msg(format!("File {} not found", path.display())))
     }
 }
 
@@ -146,7 +145,7 @@ impl LocalFilesystem {
         Ok(())
     }
 
-    pub fn update_item_from_filesystem(&mut self, item: Arc<RwLock<LocalItem>>) -> Result<(), Error> {
+    pub fn update_item_from_filesystem(&mut self, item: &Arc<RwLock<LocalItem>>) -> Result<(), Error> {
         let item_copy = item.clone();
         match &item.read().unwrap().get_parent()? {
             None => { self.roots.push(item_copy) }
@@ -206,6 +205,25 @@ impl LocalFilesystem {
         }
 
         Ok(())
+    }
+
+    pub fn post_deserialize(&mut self) {
+        for item in &self.roots {
+            Self::fix_parents_for(item);
+        }
+    }
+
+    fn fix_parents_for(parent_item: &Arc<RwLock<LocalItem>>) {
+        for item_ref in parent_item.read().unwrap().children() {
+            {
+                let mut child = item_ref.write().unwrap();
+                {
+                    let parent: Arc<RwLock<dyn Item>> = parent_item.clone();
+                    child.set_parent(&parent);
+                }
+            }
+            Self::fix_parents_for(item_ref);
+        }
     }
 }
 

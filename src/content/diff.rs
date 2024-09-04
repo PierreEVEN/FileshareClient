@@ -46,8 +46,8 @@ pub enum Action {
     RemoteRemoved(Arc<RwLock<dyn Item>>),
     ///scanned : was added on local filesystem (#upload)
     LocalAdded(Arc<RwLock<dyn Item>>),
-    ///remote : was removed on local filesystem (#remote-delete)
-    LocalRemoved(Arc<RwLock<dyn Item>>),
+    ///local, remote : was removed on local filesystem (#remote-delete)
+    LocalRemoved(Arc<RwLock<dyn Item>>, Arc<RwLock<dyn Item>>),
     ///remote : was added on remote (#download)
     RemoteAdded(Arc<RwLock<dyn Item>>),
     ///local : was removed on both side (#resync delete-ref)
@@ -74,23 +74,6 @@ impl Diff {
     }
 
     fn compare(&mut self, scanned: HashMap<String, Arc<RwLock<dyn Item>>>, local: HashMap<String, Arc<RwLock<dyn Item>>>, remote: HashMap<String, Arc<RwLock<dyn Item>>>) -> Result<(), Error> {
-        let mut found = false;
-        for key in scanned.keys() {
-            println!("{}", key);
-            if key.starts_with("Test") {
-                found = true;
-            }
-        }
-        for key in remote.keys() {
-            println!("{}", key);
-            if key.starts_with("Test") {
-                found = true;
-            }
-        }
-        if !found {
-            return Ok(());
-        }
-
         for (key, scanned_item_ref) in &scanned {
             if let Some(remote_item_ref) = remote.get(key) {
                 // The object exists on local scanned filesystem and remote
@@ -180,17 +163,11 @@ impl Diff {
         for (key, remote_item_ref) in &remote {
             if !scanned.contains_key(key) {
                 // The item exists on remote but not on local scanned filesystem
-                if local.contains_key(key) {
+                if let Some(local_ref) = local.get(key) {
                     // was removed on local filesystem (#remote-delete)
-                    self.actions.push(Action::LocalRemoved(remote_item_ref.clone()));
+                    self.actions.push(Action::LocalRemoved(local_ref.clone(), remote_item_ref.clone()));
                 } else {
                     // was added on remote (#download)
-
-                    if remote_item_ref.read().unwrap().name().plain()? == "Media" {
-                        println!("DEBUG : \nscanned = {:?}\n\n key = {:?}", scanned.keys(), key);
-                    }
-
-
                     self.actions.push(Action::RemoteAdded(remote_item_ref.clone()));
                 }
             }
@@ -202,7 +179,7 @@ impl Diff {
                 self.actions.push(Action::RemovedOnBothSides(local_item_ref.clone()));
             }
         }
-        return Ok(());
+
         for (key, scanned_item_ref) in &scanned {
             if let Some(remote_item_ref) = remote.get(key) {
                 if let Some(local_item_ref) = local.get(key) {

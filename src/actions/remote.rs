@@ -1,13 +1,13 @@
 use crate::cli::RemoteCommands;
 use crate::repository::Repository;
-use exitfailure::ExitFailure;
 use paris::{info, warn};
 use std::env;
+use failure::Error;
 
 pub struct ActionRemote {}
 
 impl ActionRemote {
-    pub fn run(subcommand: Option<RemoteCommands>) -> Result<Repository, ExitFailure> {
+    pub fn run(subcommand: Option<RemoteCommands>) -> Result<Repository, Error> {
         Ok(match subcommand {
             None => {
                 let repos = Repository::new(env::current_dir()?)?;
@@ -30,7 +30,7 @@ impl ActionRemote {
                             Ok(url) => {
                                 info!("Updated remote url to '{}'", url);}
                             Err(_) => {
-                                return Err(ExitFailure::from(failure::err_msg("Invalid remote url")));
+                                return Err(failure::err_msg("Invalid remote url"));
                             }
                         }
                         repos

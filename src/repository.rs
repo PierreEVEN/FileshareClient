@@ -1,23 +1,23 @@
 use crate::client_string::ClientString;
+use crate::content::diff::Action;
 use crate::content::filesystem::{Filesystem, LocalFilesystem, RemoteFilesystem};
 use crate::content::item::{Item, LocalItem, RemoteItem};
-use exitfailure::ExitFailure;
-use paris::{success, warn};
-use reqwest::{Response, Url};
-use rpassword::read_password;
-use serde_derive::{Deserialize, Serialize};
-use std::io::{stdout, Write};
-use std::path::{Path, PathBuf};
-use std::sync::{Arc, RwLock};
-use std::{env, fs, io};
-
 use failure::Error;
 use futures_util::StreamExt;
 use gethostname::gethostname;
 use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
+use paris::{error, info, success, warn};
+use reqwest::{Response, Url};
+use rpassword::read_password;
+use serde_derive::{Deserialize, Serialize};
 use std::fs::File;
+use std::io::{stdout, Read, Write};
 use std::ops::Add;
+use std::path::{Path, PathBuf};
+use std::sync::{Arc, RwLock};
 use std::time::{Duration, UNIX_EPOCH};
+use std::{env, fs, io};
+use futures_util::future::err;
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 struct AuthToken {
@@ -45,6 +45,9 @@ pub struct Repository {
     root_path: PathBuf,
 
     #[serde(skip_deserializing, skip_serializing)]
+    scanned_content: Option<Arc<RwLock<LocalFilesystem>>>,
+
+    #[serde(skip_deserializing, skip_serializing)]
     local_content: Option<Arc<RwLock<LocalFilesystem>>>,
 
     #[serde(skip_deserializing, skip_serializing)]
@@ -56,7 +59,7 @@ fn empty_string() -> String {
 }
 
 impl Repository {
-    pub fn new(path: PathBuf) -> Result<Self, ExitFailure> {
+    pub fn new(path: PathBuf) -> Result<Self, Error> {
         let config_path = path.join(".fileshare").join("config.json");
         if config_path.exists() {
             let file_data = fs::read_to_string(config_path)?;
@@ -190,7 +193,7 @@ impl Repository {
         Err(failure::err_msg("Authentication failed"))
     }
 
-    pub async fn logout(&mut self) -> Result<(), ExitFailure> {
+    pub async fn logout(&mut self) -> Result<(), Error> {
         let auth_token = match &self.auth_token {
             None => {
                 warn!("Already disconnected");
@@ -274,7 +277,9 @@ impl Repository {
 
         let db_path = self.root_path.join(".fileshare").join("database.json");
         self.local_content = Some(if db_path.exists() {
-            Arc::new(RwLock::new(serde_json::from_str::<LocalFilesystem>(fs::read_to_string(db_path)?.as_str())?))
+            let mut local_content = serde_json::from_str::<LocalFilesystem>(fs::read_to_string(db_path)?.as_str())?;
+            local_content.post_deserialize();
+            Arc::new(RwLock::new(local_content))
         } else {
             paris::info!("Created new local database");
             Arc::new(RwLock::new(LocalFilesystem::default()))
@@ -286,7 +291,13 @@ impl Repository {
     }
 
     pub fn scan_local_content(&mut self) -> Result<Arc<RwLock<LocalFilesystem>>, Error> {
+        match &self.scanned_content {
+            None => {}
+            Some(scanned_content) => { return Ok(scanned_content.clone()); }
+        }
+
         let filesystem = Arc::new(RwLock::new(LocalFilesystem::from_fileshare_root(&self.root_path)?));
+        self.scanned_content = Some(filesystem.clone());
         Ok(filesystem)
     }
 
@@ -310,7 +321,7 @@ impl Repository {
 
                                         let timestamp = item.timestamp.unwrap();
                                         File::options().write(true).open(final_path)?.set_modified(UNIX_EPOCH.add(Duration::from_millis(timestamp)))?;
-                                        
+
                                         self.update_local_item_state(item as &dyn Item)?;
                                     }
                                     Err(err) => {
@@ -345,7 +356,17 @@ impl Repository {
         Ok(())
     }
 
-    pub fn update_local_item_state(&mut self, item: &dyn Item) -> Result<(), Error> {
+    fn resync_local_item_state(&mut self, item: &dyn Item) -> Result<(), Error> {
+        self.update_local_item_state(item)?;
+
+        for child in item.get_children()? {
+            self.resync_local_item_state(&*child.read().unwrap())?;
+        }
+
+        Ok(())
+    }
+
+    fn update_local_item_state(&mut self, item: &dyn Item) -> Result<(), Error> {
         let item_path = env::current_dir()?.join(item.path_from_root()?);
 
         match self.fetch_local_content() {
@@ -353,11 +374,12 @@ impl Repository {
                 let local_filesystem = &mut *local_filesystem.write().unwrap();
                 match item.get_parent()? {
                     None => {
-                        local_filesystem.update_item_from_filesystem(Arc::new(RwLock::new(LocalItem::from_filesystem(&item_path, None)?)))?;
+                        info!("C : {:?}", item);
+                        local_filesystem.update_item_from_filesystem(&Arc::new(RwLock::new(LocalItem::from_filesystem(&item_path, None)?)))?;
                     }
                     Some(parent) => {
                         let found_parent = local_filesystem.find_from_path(&parent.read().unwrap().path_from_root()?)?.clone();
-                        local_filesystem.update_item_from_filesystem(Arc::new(RwLock::new(LocalItem::from_filesystem(&item_path, found_parent)?)))?;
+                        local_filesystem.update_item_from_filesystem(&Arc::new(RwLock::new(LocalItem::from_filesystem(&item_path, found_parent)?)))?;
                     }
                 }
                 Ok(())
@@ -395,14 +417,226 @@ impl Repository {
         Ok(())
     }
 
-    pub async fn remove_local_item(&mut self, item_ref: &Arc<RwLock<dyn Item>>) -> Result<(), Error> {
-        match self.fetch_local_content() {
-            Ok(local_filesystem) => {
-                let local_filesystem = &mut *local_filesystem.write().unwrap();
-                local_filesystem.remove_item(&item_ref.read().unwrap().cast::<LocalItem>()).await?;
+
+    pub async fn upload_item(&mut self, item_ref: Arc<RwLock<dyn Item>>) -> Result<(), Error> {
+        let mut items_to_upload = vec![item_ref];
+        while let Some(item_ref) = items_to_upload.pop() {
+            match item_ref.read() {
+                Ok(item) => {
+                    {
+                        let item = item.cast::<LocalItem>();
+
+                        if item.is_regular_file() {
+                            self.upload_file(item).await?;
+                        } else {
+                            self.create_remote_dir(item).await?;
+                            for child in item.get_children()? {
+                                items_to_upload.push(child);
+                            }
+                        }
+                    }
+                }
+                Err(err) => { return Err(failure::err_msg(format!("{}", err))) }
             }
-            _ => {}
+            self.update_local_item_state(&*item_ref.read().unwrap())?;
         }
+        Ok(())
+    }
+
+    async fn create_remote_dir(&mut self, item: &LocalItem) -> Result<(), Error> {
+        #[derive(Serialize)]
+        struct DirNameData {
+            pub name: ClientString,
+        }
+        let dir_data = DirNameData { name: item.name() };
+
+        match item.get_parent()? {
+            None => {
+                self.post(format!("{}/make-directory/", self.repos_path()?)).await?
+                    .json(&dir_data)
+                    .send().await?;
+            }
+            Some(parent) => {
+                let remote_content = self.fetch_remote_content().await?;
+                let remote_content = remote_content.read().unwrap();
+                match remote_content.find_from_path(&parent.read().unwrap().path_from_root()?)? {
+                    None => {
+                        return Err(failure::err_msg("Failed to find parent item from path"));
+                    }
+                    Some(remote_parent) => {
+                        self.post(format!("{}/make-directory/{}", self.repos_path()?, remote_parent.read().unwrap().cast::<RemoteItem>().id)).await?
+                            .json(&dir_data)
+                            .send().await?;
+                    }
+                }
+            }
+        }
+
+        Ok(())
+    }
+
+    async fn upload_file(&mut self, item: &LocalItem) -> Result<(), Error> {
+        let parent = match item.get_parent()? {
+            None => { String::new() }
+            Some(parent) => {
+                let remote_content = self.fetch_remote_content().await?;
+                let remote_content = remote_content.read().unwrap();
+                match remote_content.find_from_path(&parent.read().unwrap().path_from_root()?)? {
+                    None => { return Err(failure::err_msg("Failed to find remote directory")) }
+                    Some(parent) => { parent.read().unwrap().cast::<RemoteItem>().id.to_string() }
+                }
+            }
+        };
+
+        #[derive(Deserialize, Debug)]
+        struct UploadResult {
+            stream_id: Option<String>,
+            process_percent: Option<f64>,
+            message: Option<String>,
+        }
+
+        const CHUNK_SIZE: usize = 50 * 1024 * 1024;
+
+        let mut file_data = File::open(env::current_dir()?.join(item.path_from_root()?))?;
+        let mut remaining_to_send: i64 = item.size() as i64;
+
+        let mut buff: Vec<u8> = vec![0; remaining_to_send.min(CHUNK_SIZE as i64) as usize];
+        let mut read_bytes = file_data.read(buff.as_mut_slice())?;
+        if read_bytes == 0 {
+            return Err(failure::err_msg("Failed to read bytes"));
+        }
+
+
+        let mut path_string = path_clean::clean(item.path_from_root()?.parent().unwrap()).display().to_string();
+        path_string = path_string.replace("\\", "/");
+        path_string = path_string.replace("./", "");
+        if path_string == "."
+        {
+            path_string = String::from("/")
+        }
+        println!("Upload to {} / {}", path_string, item.timestamp().to_string().as_str());
+
+        let json_data: UploadResult = self.post(format!("{}send/{parent}", self.repos_path()?)).await?
+            .header("content-name", item.name().encoded().as_str())
+            .header("content-size", item.size().to_string().as_str())
+            .header("content-timestamp", item.timestamp().to_string().as_str())
+            .header("content-mimetype", item.mime_type().encoded().as_str())
+            .header("content-path", path_string.as_str())
+            .header("content-description", "")
+            .body(buff)
+            .send().await?
+            .error_for_status()?
+            .json().await?;
+
+        if let Some(message) = json_data.message {
+            if !message.is_empty() {
+                error!("Upload failed : {}", message);
+                return Ok(());
+            }
+        }
+
+        let content_token = json_data.stream_id.ok_or(failure::err_msg("Missing stream ID"))?;
+        remaining_to_send = (remaining_to_send - CHUNK_SIZE as i64).max(0);
+
+        if remaining_to_send == 0 {
+            return Ok(());
+        }
+
+        buff = vec![0; remaining_to_send.min(CHUNK_SIZE as i64) as usize];
+        read_bytes = file_data.read(buff.as_mut_slice())?;
+        while read_bytes > 0 {
+            println!("SEND chunk : {}/{}({})", buff.len(), remaining_to_send, item.size());
+            let data: UploadResult = self.post(format!("{}send/{parent}", self.repos_path()?)).await?
+                .body(buff)
+                .header("content-token", content_token.as_str())
+                .send().await?
+                .error_for_status()?
+                .json().await?;
+
+            remaining_to_send = (remaining_to_send - CHUNK_SIZE as i64).max(0);
+            buff = vec![0; remaining_to_send.min(CHUNK_SIZE as i64) as usize];
+            read_bytes = file_data.read(buff.as_mut_slice())?;
+            if let Some(message) = data.message {
+                if !message.is_empty() {
+                    error!("Upload failed : {}", message);
+                    return Ok(());
+                }
+            }
+        }
+
+        Ok(())
+    }
+
+    async fn remove_local_item(&mut self, item_ref: &Arc<RwLock<dyn Item>>) -> Result<(), Error> {
+        if let Ok(local_filesystem) = self.fetch_local_content() {
+            let local_filesystem = &mut *local_filesystem.write().unwrap();
+            local_filesystem.remove_item(&item_ref.read().unwrap().cast::<LocalItem>()).await?;
+        }
+        Ok(())
+    }
+
+    async fn remove_remote_item(&mut self, scanned_ref: &Arc<RwLock<dyn Item>>, remote_ref: &Arc<RwLock<dyn Item>>) -> Result<(), Error> {
+        self.post(format!("{}move-to-trash/", self.repos_path().unwrap()))
+            .await?.json(&vec![remote_ref.read().unwrap().cast::<RemoteItem>().id])
+            .send().await?;
+        self.remove_local_item(scanned_ref).await?;
+        Ok(())
+    }
+
+    pub async fn apply_actions(&mut self, actions: &Vec<Action>) -> Result<(), Error> {
+        for action in actions {
+            match action {
+                Action::ResyncLocal(scanned) => {
+                    self.resync_local_item_state(&*scanned.read().unwrap())?;
+                }
+                Action::ConflictAddLocalNewer(scanned, remote) => {
+                    todo!()
+                }
+                Action::ErrorRemoteDowngraded(scanned, remote) => {
+                    todo!()
+                }
+                Action::LocalUpgraded(scanned, remote) => {
+                    self.upload_item(scanned.clone()).await?;
+                }
+                Action::ConflictBothDowngraded(scanned, local, remote) => {
+                    todo!()
+                }
+                Action::ConflictBothUpgraded(scanned, local, remote) => {
+                    todo!()
+                }
+                Action::ConflictLocalUpgradedRemoteDowngraded(scanned, local, remote) => {
+                    todo!()
+                }
+                Action::ConflictAddRemoteNewer(scanned, remote) => {
+                    todo!()
+                }
+                Action::RemoteUpgraded(scanned, remote) => {
+                    self.download_item(remote.clone()).await?;
+                }
+                Action::ErrorLocalDowngraded(scanned, remote) => {
+                    todo!()
+                }
+                Action::ConflictLocalDowngradedRemoteUpgraded(scanned, local, remote) => {
+                    todo!()
+                }
+                Action::RemoteRemoved(scanned) => {
+                    self.remove_local_item(scanned).await?;
+                }
+                Action::LocalAdded(scanned) => {
+                    self.upload_item(scanned.clone()).await?;
+                }
+                Action::LocalRemoved(local, remote) => {
+                    self.remove_remote_item(local, remote).await?;
+                }
+                Action::RemoteAdded(remote) => {
+                    self.download_item(remote.clone()).await?;
+                }
+                Action::RemovedOnBothSides(local) => {
+                    self.remove_local_item(local).await?
+                }
+            }
+        }
+
         Ok(())
     }
 }

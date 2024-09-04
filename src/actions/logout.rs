@@ -1,5 +1,5 @@
 use std::env;
-use exitfailure::ExitFailure;
+use failure::Error;
 use crate::repository::Repository;
 
 pub struct ActionLogout {
@@ -7,7 +7,7 @@ pub struct ActionLogout {
 }
 
 impl ActionLogout {
-    pub async fn run() -> Result<Repository, ExitFailure> {
+    pub async fn run() -> Result<Repository, Error> {
         let mut repos = Repository::new(env::current_dir()?)?;
         repos.logout().await?;
         Ok(repos)

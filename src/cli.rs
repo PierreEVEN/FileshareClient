@@ -1,12 +1,21 @@
-use clap::{Parser, Subcommand};
+use clap::{Args, Parser, Subcommand};
 
 #[derive(Debug, Parser)]
-#[clap(version, about, long_about = None)]
+#[clap(version, about, long_about = None, name="fileshare")]
 pub struct FileshareArgs {
     #[command(subcommand)]
     pub commands: RootCommands,
 }
 
+
+#[derive(Debug, clap::ValueEnum, Clone)]
+pub enum AutoMergeCases {
+    MostRecent,
+    KeepOlder
+}
+
+#[derive(Debug, Args, Clone)]
+pub struct MergeOptions {}
 
 #[derive(Subcommand, Debug)]
 pub enum RootCommands {
@@ -45,7 +54,7 @@ pub enum RootCommands {
 #[derive(Subcommand, Debug)]
 pub enum EditorCommands {
     Set {
-        url: String
+        url: String,
     }
 }
 
