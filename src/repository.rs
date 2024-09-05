@@ -463,7 +463,6 @@ impl Repository {
                         if item.is_regular_file() {
                             self.upload_file(item).await?;
                         } else {
-                            println!("Create remote dir {:?}", item.name().plain()?);
                             self.create_remote_dir(item).await?;
                             for child in item.get_children()? {
                                 items_to_upload.push(child);
@@ -554,6 +553,11 @@ impl Repository {
         {
             path_string = String::from("/")
         }
+        let mut encoded_path = String::from("/");
+        path_string.split("/").for_each(|item| {
+            encoded_path += ClientString::encode(item).as_str();
+            encoded_path += "/";
+        });
 
         let file = tokio::fs::File::open(env::current_dir()?.join(item.path_from_root()?)).await?;
 
@@ -591,7 +595,7 @@ impl Repository {
             .header("content-size", item.size().to_string().as_str())
             .header("content-timestamp", item.timestamp().to_string().as_str())
             .header("content-mimetype", item.mime_type().encoded().as_str())
-            .header("content-path", path_string.as_str())
+            .header("content-path", encoded_path.as_str())
             .header("content-description", "")
             .body(Body::wrap_stream(async_stream))
             .send().await?

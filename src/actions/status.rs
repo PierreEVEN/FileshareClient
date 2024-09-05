@@ -80,12 +80,10 @@ impl ActionStatus {
                 }
                 Action::RemoteRemoved(scanned) => {
                     let scanned = scanned.read().unwrap();
-                    info!("scanned : {}", scanned.name().encoded());
                     println!(" ⚊ ⚊ X | {} - ✖️ The file have been deleted on remote.", scanned.path_from_root()?.display());
                 }
                 Action::LocalAdded(scanned) => {
                     let scanned = scanned.read().unwrap();
-                    info!("scanned : {}", scanned.name().encoded());
                     println!(" + . . | {} - ➕ This file has been added locally.", scanned.path_from_root()?.display());
                 }
                 Action::LocalRemoved(_, remote) => {
@@ -94,7 +92,6 @@ impl ActionStatus {
                 }
                 Action::RemoteAdded(remote) => {
                     let remote = remote.read().unwrap();
-                    info!("remote : {}", remote.name().encoded());
                     println!(" . . + | {} - ➕ This file was added on remote.", remote.path_from_root()?.display());
                 }
                 Action::RemovedOnBothSides(local) => {
