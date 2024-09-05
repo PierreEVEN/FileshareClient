@@ -1,14 +1,13 @@
 use crate::content::diff::{Action, Diff};
 use crate::repository::Repository;
-use std::env;
 use failure::Error;
-use paris::success;
+use paris::{info, success};
 
 pub struct ActionStatus {}
 
 impl ActionStatus {
     pub async fn run() -> Result<Repository, Error> {
-        let mut repos = Repository::new(env::current_dir()?)?;
+        let mut repos = Repository::new()?;
         let diff = Diff::from_repository(&mut repos).await?;
 
         if diff.actions().is_empty() {
@@ -81,10 +80,12 @@ impl ActionStatus {
                 }
                 Action::RemoteRemoved(scanned) => {
                     let scanned = scanned.read().unwrap();
+                    info!("scanned : {}", scanned.name().encoded());
                     println!(" ⚊ ⚊ X | {} - ✖️ The file have been deleted on remote.", scanned.path_from_root()?.display());
                 }
                 Action::LocalAdded(scanned) => {
                     let scanned = scanned.read().unwrap();
+                    info!("scanned : {}", scanned.name().encoded());
                     println!(" + . . | {} - ➕ This file has been added locally.", scanned.path_from_root()?.display());
                 }
                 Action::LocalRemoved(_, remote) => {
@@ -93,6 +94,7 @@ impl ActionStatus {
                 }
                 Action::RemoteAdded(remote) => {
                     let remote = remote.read().unwrap();
+                    info!("remote : {}", remote.name().encoded());
                     println!(" . . + | {} - ➕ This file was added on remote.", remote.path_from_root()?.display());
                 }
                 Action::RemovedOnBothSides(local) => {

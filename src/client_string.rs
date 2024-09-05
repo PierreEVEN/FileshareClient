@@ -1,4 +1,3 @@
-use percent_encoding_rfc3986::{percent_decode_str, utf8_percent_encode, AsciiSet, CONTROLS};
 use serde_derive::{Deserialize, Serialize};
 use std::fmt::{Debug, Display, Formatter};
 
@@ -12,6 +11,14 @@ impl Debug for ClientString {
         f.write_str(self.encoded().as_str())
     }
 }
+
+impl PartialEq<Self> for ClientString {
+    fn eq(&self, other: &Self) -> bool {
+        self.plain().unwrap() == other.plain().unwrap()
+    }
+}
+
+impl Eq for ClientString {}
 
 impl Display for ClientString {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
@@ -46,12 +53,11 @@ impl ClientString {
     }
 
     pub fn encode(decoded: &str) -> String {
-        const FRAGMENT: &AsciiSet = &CONTROLS.add(b' ').add(b'"').add(b'<').add(b'>').add(b'`').add(b'&');
-        utf8_percent_encode(decoded, FRAGMENT).to_string()
+        urlencoding::encode(decoded).to_string()
     }
 
     pub fn decode(encoded: &str) -> Result<String, failure::Error> {
-        Ok(percent_decode_str(encoded).or(Err(failure::err_msg("Failed to decode input string")))?.decode_utf8()?.to_string())
+        Ok(urlencoding::decode(encoded).or(Err(failure::err_msg("Failed to decode input string")))?.to_string())
     }
 
     pub fn plain(&self) -> Result<String, failure::Error> {

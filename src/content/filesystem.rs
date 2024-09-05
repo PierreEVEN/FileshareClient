@@ -156,7 +156,7 @@ impl LocalFilesystem {
         Ok(())
     }
 
-    fn find_from_path_internal(&self, path: &PathBuf, items: &Vec<Arc<RwLock<LocalItem>>>) -> Result<Option<Arc<RwLock<dyn Item>>>, Error> {
+    fn find_from_path_internal(path: &PathBuf, items: &Vec<Arc<RwLock<LocalItem>>>) -> Result<Option<Arc<RwLock<dyn Item>>>, Error> {
         let mut path_iter = path.iter();
         let mut p = path_iter.next().ok_or(failure::err_msg("Empty path"))?;
 
@@ -167,12 +167,12 @@ impl LocalFilesystem {
         for item in items {
             if item.read().unwrap().name().plain()?.as_str() == p {
                 let remaining_path = PathBuf::from(path_iter.as_path());
-                match path_iter.next() {
+                return match path_iter.next() {
                     None => {
-                        return Ok(Some(item.clone() as Arc<RwLock<dyn Item>>));
+                        Ok(Some(item.clone() as Arc<RwLock<dyn Item>>))
                     }
                     Some(_) => {
-                        return self.find_from_path_internal(&remaining_path, item.read().unwrap().children());
+                        Self::find_from_path_internal(&remaining_path, item.read().unwrap().children())
                     }
                 }
             }
@@ -193,7 +193,7 @@ impl LocalFilesystem {
         match item.get_parent()? {
             None => {
                 for (i, root) in self.roots.iter().enumerate() {
-                    if root.read().unwrap().name().encoded() == item.name().encoded() {
+                    if root.read().unwrap().name().plain()? == item.name().plain()? {
                         self.roots.remove(i);
                         break;
                     }
@@ -242,6 +242,6 @@ impl Filesystem for LocalFilesystem {
     }
 
     fn find_from_path(&self, path: &PathBuf) -> Result<Option<Arc<RwLock<dyn Item>>>, Error> {
-        self.find_from_path_internal(path, &self.roots)
+        Self::find_from_path_internal(path, &self.roots)
     }
 }

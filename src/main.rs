@@ -56,14 +56,14 @@ async fn main() -> Result<(), Error> {
         }
         RootCommands::Editor { editor } => {
             ActionEditor::run(editor)
-        }
+        }   
         RootCommands::Remote { remote } => {
             ActionRemote::run(remote)
         }
     } {
         Ok(_) => {}
         Err(error) => {
-            error!("{:?}", error);
+            error!("{}", error.to_string());
         }
     }
 

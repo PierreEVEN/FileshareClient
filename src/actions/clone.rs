@@ -12,13 +12,17 @@ impl ActionClone {
         let mut path = url.path_segments().ok_or_else(|| failure::err_msg("Cannot parse path"))?;
         path.next().ok_or(failure::err_msg("Missing user in remote path"))?.to_string();
         let remote_repository = path.next().ok_or(failure::err_msg("Missing repository in remote path"))?.to_string();
-        fs::create_dir(format!("./{}", remote_repository))?;
-        env::set_current_dir(format!("./{}", remote_repository))?;
+        let root_path = env::current_dir()?.join(remote_repository.clone());
+        if root_path.exists() {
+            return Err(failure::err_msg(format!("Cannot clone : a directory named '{remote_repository}' already exists")));
+        }
+        fs::create_dir(root_path.clone())?;
+        env::set_current_dir(root_path.clone())?;
         let repository = match Self::try_clone_here(repository_url).await {
             Ok(repository) => { repository }
             Err(error) => {
-                env::set_current_dir("..")?;
-                fs::remove_dir_all(format!("./{}", remote_repository))?;
+                env::set_current_dir(root_path.parent().unwrap())?;
+                fs::remove_dir_all(root_path)?;
                 return Err(error);
             }
         };

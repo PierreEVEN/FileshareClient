@@ -1,8 +1,7 @@
 use crate::cli::EditorCommands;
 use crate::repository::Repository;
-use paris::{info, warn};
-use std::env;
 use failure::Error;
+use paris::{info, warn};
 
 pub struct ActionEditor {}
 
@@ -11,7 +10,7 @@ impl ActionEditor {
     {
         Ok(match subcommand {
         None => {
-            let repos = Repository::new(env::current_dir()?)?;
+            let repos = Repository::new()?;
             if repos.get_editor_command().is_empty() {
                 warn!("Editor executable path is not set");
             } else {
@@ -22,7 +21,7 @@ impl ActionEditor {
         Some(remote) => {
             match remote {
                 EditorCommands::Set { url } => {
-                    let mut repos = Repository::new(env::current_dir()?)?;
+                    let mut repos = Repository::new()?;
                     repos.set_editor_command(url);
                     info!("Updated editor executable path to '{}'", repos.get_editor_command());
                     repos

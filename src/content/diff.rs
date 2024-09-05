@@ -13,7 +13,7 @@ pub struct Diff {
 fn sort_items_to_set(items: &Vec<Arc<RwLock<dyn Item>>>) -> HashMap<String, Arc<RwLock<dyn Item>>> {
     let mut hashmap = HashMap::new();
     for item in items {
-        hashmap.insert(item.read().unwrap().name().encoded(), item.clone());
+        hashmap.insert(item.read().unwrap().name().plain().unwrap(), item.clone());
     }
     hashmap
 }

@@ -11,12 +11,12 @@ use reqwest::{Body, Response, Url};
 use rpassword::read_password;
 use serde_derive::{Deserialize, Serialize};
 use std::fs::File;
-use std::io::{stdout, Write};
+use std::io::{stdin, stdout, Write};
 use std::ops::Add;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, RwLock};
 use std::time::{Duration, UNIX_EPOCH};
-use std::{env, fs, io};
+use std::{env, fs};
 use tokio_util::io::ReaderStream;
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -59,7 +59,13 @@ fn empty_string() -> String {
 }
 
 impl Repository {
-    pub fn new(path: PathBuf) -> Result<Self, Error> {
+    pub fn new() -> Result<Self, Error> {
+        if let Some(root) = Self::get_repository_root(env::current_dir()?.as_path())? {
+            env::set_current_dir(root)?;
+        } else {
+            return Err(failure::err_msg("Not a fileshare repository !"));
+        }
+        let path = env::current_dir()?;
         let config_path = path.join(".fileshare").join("config.json");
         if config_path.exists() {
             let file_data = fs::read_to_string(config_path)?;
@@ -74,6 +80,10 @@ impl Repository {
     }
 
     pub fn init_here(path: PathBuf) -> Result<Self, Error> {
+        if Self::get_repository_root(env::current_dir()?.as_path())?.is_some() {
+            return Err(failure::err_msg("Already inside an initialized fileshare repository"));
+        }
+
         let fileshare_dir = path.join(".fileshare").join("config.json");
         if fileshare_dir.exists() {
             Err(failure::err_msg("Already a fileshare repository"))
@@ -88,6 +98,18 @@ impl Repository {
         self.root_path = root_path;
         Self::create_config_dir(self.root_path.as_path())?;
         Ok(())
+    }
+
+    fn get_repository_root(dir: &Path) -> Result<Option<PathBuf>, Error> {
+        for path in fs::read_dir(dir)? {
+            if path?.file_name() == ".fileshare" {
+                return Ok(Some(PathBuf::from(dir)));
+            }
+        }
+        match dir.parent() {
+            None => { Ok(None) }
+            Some(parent) => { Ok(Self::get_repository_root(parent)?.clone()) }
+        }
     }
 
     fn create_config_dir(path: &Path) -> Result<(), Error> {
@@ -111,7 +133,7 @@ impl Repository {
         Ok(())
     }
 
-    pub fn get_remote_url(&self) -> Result<String, failure::Error> {
+    pub fn get_remote_url(&self) -> Result<String, Error> {
         if self.remote_origin.is_empty() ||
             self.remote_user.is_empty() ||
             self.remote_repository.is_empty() {
@@ -126,7 +148,7 @@ impl Repository {
 
     pub fn get_editor_command(&self) -> &str { self.editor_command.as_str() }
 
-    pub fn get_origin(&self) -> Result<Url, failure::Error> {
+    pub fn get_origin(&self) -> Result<Url, Error> {
         if self.remote_origin.is_empty() {
             return Err(failure::err_msg("Invalid origin"));
         }
@@ -149,14 +171,16 @@ impl Repository {
             device: ClientString,
         }
 
-        let mut body = AuthenticationBody::default();
-        body.device = ClientString::from_client(format!("Fileshare client - {} ({}) : {}", gethostname().to_str().unwrap(), env::consts::OS, env::current_dir()?.to_str().unwrap()).as_str());
+        let mut body = AuthenticationBody {
+            device: ClientString::from_client(format!("Fileshare client - {} ({}) : {}", gethostname().to_str().unwrap(), env::consts::OS, env::current_dir()?.to_str().unwrap()).as_str()),
+            ..Default::default()
+        };
         body.username = match username {
             None => {
                 print!("Username or email : ");
                 stdout().flush()?;
                 let mut buffer = String::new();
-                io::stdin().read_line(&mut buffer)?;
+                stdin().read_line(&mut buffer)?;
                 if let Some('\n') = buffer.chars().next_back() {
                     buffer.pop();
                 }
@@ -171,7 +195,12 @@ impl Repository {
         for _ in 0..3 {
             print!("Password : ");
             stdout().flush()?;
-            body.password = read_password()?;
+            body.password = match read_password() {
+                Ok(pswd) => { pswd }
+                Err(err) => {
+                    return Err(failure::err_msg(err.to_string()));
+                }
+            };
             let client = reqwest::Client::new()
                 .post(self.get_origin()?.join("api/create-authtoken")?)
                 .json(&body)
@@ -281,7 +310,7 @@ impl Repository {
             local_content.post_deserialize();
             Arc::new(RwLock::new(local_content))
         } else {
-            paris::info!("Created new local database");
+            info!("Created new local database");
             Arc::new(RwLock::new(LocalFilesystem::default()))
         });
         match &self.local_content {
@@ -341,8 +370,7 @@ impl Repository {
                                             if !dir_path.metadata()?.is_dir() {
                                                 error!("Cannot create directory {} : a file with the same name already exists !", dir_path.display());
                                             }
-                                        }
-                                        else {
+                                        } else {
                                             fs::create_dir(dir_path.clone())?;
                                         }
                                         self.update_local_item_state(item as &dyn Item)?;
@@ -583,7 +611,7 @@ impl Repository {
     async fn remove_local_item(&mut self, item_ref: &Arc<RwLock<dyn Item>>) -> Result<(), Error> {
         if let Ok(local_filesystem) = self.fetch_local_content() {
             let local_filesystem = &mut *local_filesystem.write().unwrap();
-            local_filesystem.remove_item(&item_ref.read().unwrap().cast::<LocalItem>()).await?;
+            local_filesystem.remove_item(item_ref.read().unwrap().cast::<LocalItem>()).await?;
         }
         Ok(())
     }
@@ -597,7 +625,6 @@ impl Repository {
     }
 
     pub async fn apply_actions(&mut self, actions: &Vec<Action>) -> Result<(), Error> {
-
         if actions.is_empty() {
             info!("Nothing to do !");
         }

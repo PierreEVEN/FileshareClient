@@ -1,13 +1,12 @@
 use crate::content::diff::{Action, Diff};
 use crate::repository::Repository;
-use std::env;
 use failure::Error;
 
 pub struct ActionPull {}
 
 impl ActionPull {
     pub async fn run() -> Result<Repository, Error> {
-        let mut repos = Repository::new(env::current_dir()?)?;
+        let mut repos = Repository::new()?;
         let diff = Diff::from_repository(&mut repos).await?;
 
         let mut actions = vec![];

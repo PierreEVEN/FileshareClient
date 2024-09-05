@@ -196,7 +196,7 @@ impl LocalItem {
 
     pub fn remove_child(&mut self, name: &ClientString) -> Result<(), Error> {
         for (i, child) in self.children.iter().enumerate() {
-            if child.read().unwrap().name.encoded() == name.encoded() {
+            if child.read().unwrap().name == *name {
                 self.children.remove(i);
                 return Ok(());
             }

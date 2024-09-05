@@ -1,8 +1,7 @@
 use crate::cli::RemoteCommands;
 use crate::repository::Repository;
-use paris::{info, warn};
-use std::env;
 use failure::Error;
+use paris::{info, warn};
 
 pub struct ActionRemote {}
 
@@ -10,7 +9,7 @@ impl ActionRemote {
     pub fn run(subcommand: Option<RemoteCommands>) -> Result<Repository, Error> {
         Ok(match subcommand {
             None => {
-                let repos = Repository::new(env::current_dir()?)?;
+                let repos = Repository::new()?;
                 match repos.get_remote_url() {
                     Ok(url) => {
                         info!("{}", url);
@@ -24,7 +23,7 @@ impl ActionRemote {
             Some(remote) => {
                 match remote {
                     RemoteCommands::Set { url } => {
-                        let mut repos = Repository::new(env::current_dir()?)?;
+                        let mut repos = Repository::new()?;
                         repos.set_remote_url(url)?;
                         match repos.get_remote_url() {
                             Ok(url) => {
